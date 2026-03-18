@@ -1,6 +1,7 @@
-﻿'use strict';
+'use strict';
 
 const path = require('node:path');
+const { readCurrentCustomTargetSync } = require('./custom_target');
 
 const ROOT_DIR = __dirname;
 const PATCHED_PACKAGE_DIR = path.join(ROOT_DIR, 'patched-package');
@@ -16,6 +17,7 @@ const TARGETS = {
     vulnerableClass: 'Prototype Pollution',
     vulnerableDir: path.join(ROOT_DIR, 'vulnerable-package'),
     sourcePath: path.join(ROOT_DIR, 'vulnerable-package', 'index.js'),
+    sourceRelPath: 'index.js',
     cvePath: path.join(ROOT_DIR, 'cve_descriptions', 'CVE-2019-10746.txt'),
     reportSummary:
       '`CVE-2019-10746` affects `mixin-deep` before version 1.3.2 and version 2.0.0. The vulnerable merge logic can be abused with a `constructor -> prototype` payload to pollute `Object.prototype`.',
@@ -33,6 +35,7 @@ const TARGETS = {
     vulnerableClass: 'Prototype Pollution',
     vulnerableDir: path.join(ROOT_DIR, 'vulnerable-package-2'),
     sourcePath: path.join(ROOT_DIR, 'vulnerable-package-2', 'index.js'),
+    sourceRelPath: 'index.js',
     cvePath: path.join(ROOT_DIR, 'cve_descriptions', 'CVE-2019-10747.txt'),
     reportSummary:
       '`CVE-2019-10747` affects `set-value` 3.0.0 and 3.0.1. The vulnerable path setter accepts untrusted path segments like `__proto__`, allowing attacker-controlled writes onto `Object.prototype`.',
@@ -50,6 +53,7 @@ const TARGETS = {
     vulnerableClass: 'Insufficient Input Validation',
     vulnerableDir: path.join(ROOT_DIR, 'vulnerable-package-3'),
     sourcePath: path.join(ROOT_DIR, 'vulnerable-package-3', 'index.js'),
+    sourceRelPath: 'index.js',
     cvePath: path.join(ROOT_DIR, 'cve_descriptions', 'CVE-2023-28155.txt'),
     reportSummary:
       '`CVE-2023-28155` affects `request` through 2.88.2. Cross-protocol redirects can bypass SSRF mitigations, and the package is no longer maintained by the original maintainer.',
@@ -59,8 +63,29 @@ const TARGETS = {
   }
 };
 
+function getCurrentCustomTarget() {
+  return readCurrentCustomTargetSync();
+}
+
 function getTargetConfig(targetKey = 'mixin-deep') {
+  if (targetKey === 'custom') {
+    return getCurrentCustomTarget() || TARGETS['mixin-deep'];
+  }
+
   return TARGETS[targetKey] || TARGETS['mixin-deep'];
+}
+
+function listAvailableTargets() {
+  const targets = Object.values(TARGETS);
+  const customTarget = getCurrentCustomTarget();
+  if (customTarget) {
+    targets.push({
+      ...customTarget,
+      demoButtonLabel: 'Custom Package'
+    });
+  }
+
+  return targets;
 }
 
 function parseTargetFlag(argv = []) {
@@ -72,9 +97,30 @@ function parseTargetFlag(argv = []) {
   return 'mixin-deep';
 }
 
+function parseInputFlag(argv = []) {
+  const inputIndex = argv.indexOf('--input');
+  if (inputIndex !== -1 && argv[inputIndex + 1]) {
+    return argv[inputIndex + 1];
+  }
+
+  return '';
+}
+
+function parseCveFlag(argv = []) {
+  const cveIndex = argv.indexOf('--cve');
+  if (cveIndex !== -1 && argv[cveIndex + 1]) {
+    return argv[cveIndex + 1];
+  }
+
+  return '';
+}
+
 module.exports = {
   TARGETS,
   PATCHED_PACKAGE_DIR,
   getTargetConfig,
-  parseTargetFlag
+  listAvailableTargets,
+  parseTargetFlag,
+  parseInputFlag,
+  parseCveFlag
 };

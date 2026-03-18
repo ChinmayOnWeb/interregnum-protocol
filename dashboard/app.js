@@ -16,6 +16,73 @@ async function loadTarget(targetKey) {
   initializeApp(data);
 }
 
+async function prepareCustomTarget(input, cve) {
+  const response = await fetch('/api/prepare-target', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input, cve })
+  });
+
+  if (!response.ok) throw new Error(`Custom target preparation failed (${response.status})`);
+  return response.json();
+}
+
+function showPreparingState(repoValue, cveValue) {
+  showScreen('screen-live');
+  setText('top-status', `Preparing target for ${repoValue || 'custom package'}`);
+  setText('protocol-target', `${repoValue || 'Custom package'}${cveValue ? ` - ${cveValue}` : ''}`);
+  setText('live-title', 'Preparing target package');
+  setText('progress-status', 'Fetching source, advisory context, and harness');
+
+  const feed = document.getElementById('terminal-stream');
+  const artifactPreview = document.getElementById('artifact-preview');
+  const artifactTitle = document.getElementById('artifact-title');
+  const progressFill = document.getElementById('progress-fill');
+  const miniStats = document.getElementById('mini-stats');
+  const orb = document.querySelector('.console-orb');
+  const stageNodes = Array.from(document.querySelectorAll('.live-stage'));
+  const pipelineNodes = Array.from(document.querySelectorAll('.pipeline-node'));
+
+  if (feed) {
+    feed.innerHTML = '';
+    feed.classList.add('is-running');
+    feed.classList.remove('is-complete');
+    appendTerminalLine(`[Intake] Preparing ${repoValue || 'custom package'} for live remediation`, 'accent', feed);
+    appendTerminalLine('[Scout] Fetching source package and advisory context...', 'dim', feed);
+  }
+
+  if (artifactTitle) artifactTitle.textContent = 'Preparing target';
+  if (artifactPreview) {
+    artifactPreview.textContent = 'Downloading source, selecting target file, and generating the initial harness...';
+    artifactPreview.classList.add('is-visible');
+  }
+
+  if (miniStats) {
+    miniStats.innerHTML = '';
+    renderMiniStats(['Source fetch pending', 'Advisory lookup pending']);
+  }
+
+  if (progressFill) {
+    progressFill.style.width = '12%';
+    progressFill.classList.add('is-running');
+    progressFill.classList.remove('is-complete');
+  }
+
+  if (orb) {
+    orb.classList.add('is-running');
+    orb.classList.remove('is-complete');
+  }
+
+  stageNodes.forEach((node, index) => {
+    node.classList.toggle('is-active', index === 0);
+    node.classList.remove('is-complete');
+  });
+  pipelineNodes.forEach((node, index) => {
+    node.classList.toggle('is-active', index === 0);
+    node.classList.remove('is-complete');
+  });
+}
+
 function initializeApp(data) {
   const state = window.__protocolState || { target: data.target, repo: '', cve: '' };
   state.target = data.target;
@@ -71,17 +138,26 @@ function bindStaticHandlers(state) {
     const mode = getIntakeMode();
     const repoValue = document.getElementById('repo-input').value.trim();
     const cveValue = document.getElementById('cve-input').value.trim();
-    const inferredTarget = mode === 'custom'
-      ? inferTargetFromInput(repoValue, state.target)
+    let data = window.__protocolData;
+    let inferredTarget = mode === 'custom'
+      ? inferTargetFromInput(repoValue)
       : document.getElementById('target-select').value;
 
-    if (inferredTarget && (!window.__protocolData || inferredTarget !== window.__protocolData.target)) {
+    if (mode === 'custom' && !inferredTarget) {
+      showPreparingState(repoValue, cveValue);
+      const prepared = await prepareCustomTarget(repoValue, cveValue);
+      inferredTarget = prepared.target || 'custom';
+      state.target = inferredTarget;
+      await loadTarget(inferredTarget);
+      data = window.__protocolData;
+    } else if (inferredTarget && (!window.__protocolData || inferredTarget !== window.__protocolData.target)) {
       state.target = inferredTarget;
       document.getElementById('target-select').value = inferredTarget;
       await loadTarget(inferredTarget);
+      data = window.__protocolData;
     }
 
-    const data = window.__protocolData;
+    data = window.__protocolData || data;
     state.repo = repoValue || data.packageName;
     state.cve = cveValue || data.cve;
     state.target = inferredTarget || data.target;
@@ -139,12 +215,12 @@ function updateDemoChips(activeTarget) {
   });
 }
 
-function inferTargetFromInput(rawValue, fallbackTarget) {
+function inferTargetFromInput(rawValue) {
   const value = String(rawValue || '').toLowerCase();
   if (value.includes('mixin-deep')) return 'mixin-deep';
   if (value.includes('set-value')) return 'set-value';
   if (value.includes('npmjs.com/package/request') || value === 'request' || value.includes('/request')) return 'request';
-  return fallbackTarget || 'mixin-deep';
+  return '';
 }
 
 function getIntakeMode() {
@@ -281,7 +357,11 @@ function buildProtocolSteps(state, data) {
     : 'No scout findings';
   const exploitLine = data.target === 'set-value'
     ? '[Spotter] Located unsafe path traversal through __proto__ segment'
-    : '[Spotter] Located recursive merge path into constructor -> prototype chain';
+    : data.target === 'request'
+      ? '[Spotter] Located redirect policy bypass through unvalidated cross-protocol redirect handling'
+      : data.target === 'custom'
+        ? '[Spotter] Located the highest-risk code path tied to the supplied advisory context'
+        : '[Spotter] Located recursive merge path into constructor -> prototype chain';
   const adversarialLine = data.adversarial && data.adversarial.bypasses_found === 0
     ? `[Adversary] ${data.adversarial.adversarial_tests_run} hostile payloads blocked. Verdict: ${data.adversarial.verdict}`
     : `[Adversary] ${data.adversarial.bypasses_found} bypasses found. Re-engage Striker.`;

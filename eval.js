@@ -120,7 +120,7 @@ async function evaluateRun(options = {}) {
   const target = getTargetConfig(targetKey);
   const [sourceCode, patchedCode, patchOutput, analyzerOutput, pipelineRun, adversarialResults] = await Promise.all([
     fs.readFile(target.sourcePath, 'utf8'),
-    fs.readFile(path.join(PATCHED_PACKAGE_DIR, 'index.js'), 'utf8'),
+    fs.readFile(path.join(PATCHED_PACKAGE_DIR, target.sourceRelPath || 'index.js'), 'utf8'),
     readJsonOrNull(PATCH_OUTPUT_PATH),
     readJsonOrNull(ANALYZER_OUTPUT_PATH),
     readJsonOrNull(PIPELINE_RUN_PATH),
@@ -138,7 +138,7 @@ async function evaluateRun(options = {}) {
     lines_changed: { points: scoreLinesChanged(changedLines), max_points: 20, changed_lines: changedLines },
     convention_match: { points: scoreConventionMatch(sourceCode, patchedCode, patchDiff), max_points: 20 },
     no_new_dependencies: { points: scoreDependencySafety(sourceCode, patchedCode), max_points: 10 },
-    vulnerability_fully_blocked: { points: afterExploit.ok ? 30 : 0, max_points: 30 },
+    vulnerability_fully_blocked: { points: beforeExploit.ok && afterExploit.ok ? 30 : 0, max_points: 30 },
     no_test_regressions: { points: beforeNormal.ok && afterNormal.ok ? 20 : 0, max_points: 20 }
   };
 

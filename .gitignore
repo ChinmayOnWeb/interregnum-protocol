@@ -1,0 +1,13 @@
+dynamic-target/
+patched-package/
+server-out.log
+server-err.log
+generated_harness.json
+current_custom_target.json
+analyzer_output.json
+classification_output.json
+patch_output.json
+adversarial_results.json
+eval_results.json
+pipeline_run.json
+REMEDIATION_REPORT.md

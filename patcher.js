@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -8,7 +8,6 @@ const { runExploitTest } = require('./exploit_test');
 const { runNormalTests } = require('./normal_tests');
 const { getTargetConfig, PATCHED_PACKAGE_DIR, parseTargetFlag } = require('./target_config');
 
-const PATCHED_SOURCE_PATH = path.join(PATCHED_PACKAGE_DIR, 'index.js');
 const ANALYZER_OUTPUT_PATH = path.join(__dirname, 'analyzer_output.json');
 const PATCH_OUTPUT_PATH = path.join(__dirname, 'patch_output.json');
 
@@ -29,6 +28,19 @@ async function readAnalyzerOutput(targetKey, filePath = ANALYZER_OUTPUT_PATH) {
 }
 
 function buildPatchPrompt({ analyzerOutput, sourceCode, previousAttempt, target, adversarialFindings }) {
+  const prototypePollutionTarget = target.vulnerableClass === 'Prototype Pollution';
+  const remediationRules = prototypePollutionTarget
+    ? [
+        'The patch must block prototype pollution through all of these keys:',
+        '- __proto__',
+        '- constructor',
+        '- prototype'
+      ]
+    : [
+        `Remediate the vulnerability class: ${target.vulnerableClass}.`,
+        'Close the dangerous code path identified by the analyzer while preserving safe package behavior.'
+      ];
+
   const retryContext = previousAttempt
     ? [
         '',
@@ -59,11 +71,8 @@ function buildPatchPrompt({ analyzerOutput, sourceCode, previousAttempt, target,
     '- side_effect_risk',
     'The total score should be the sum of the four dimensions, on a 0-100 scale.',
     'Then choose the best strategy, explain why it wins, and generate the actual patch using that strategy.',
-    'The patch must block prototype pollution through all of these keys:',
-    '- __proto__',
-    '- constructor',
-    '- prototype',
-    'Preserve existing behavior for safe keys and keep project style intact.',
+    ...remediationRules,
+    'Preserve existing package conventions and keep the patch minimal.',
     'Return strict JSON with this schema:',
     '{',
     '  "strategies": [',
@@ -88,7 +97,7 @@ function buildPatchPrompt({ analyzerOutput, sourceCode, previousAttempt, target,
     'Use exactly 3 strategy objects.',
     'Exactly one strategy must have selected=true.',
     'The selected strategy must have the highest score.',
-    'The patch_diff should be a minimal unified diff for index.js only.',
+    `The patch_diff should be a minimal unified diff for ${target.sourceRelPath || 'index.js'} only.`,
     'The patched_code should be the full fixed file contents.',
     'Do not include markdown fences or any extra commentary.',
     '',
@@ -110,12 +119,12 @@ async function generatePatch({ analyzerOutput, sourceCode, model, previousAttemp
   });
 }
 
-function hasRequiredGuards(sourceCode) {
-  return (
-    sourceCode.includes('__proto__') &&
-    sourceCode.includes('constructor') &&
-    sourceCode.includes('prototype')
-  );
+function hasRequiredGuards(sourceCode, target) {
+  if (target.vulnerableClass !== 'Prototype Pollution') {
+    return true;
+  }
+
+  return sourceCode.includes('__proto__') && sourceCode.includes('constructor') && sourceCode.includes('prototype');
 }
 
 function normalizeStrategies(rawStrategies, selectedStrategyName) {
@@ -146,12 +155,7 @@ function normalizeStrategies(rawStrategies, selectedStrategyName) {
     normalized.push({
       name: `Strategy ${String.fromCharCode(65 + normalized.length)}`,
       approach: 'No approach provided.',
-      score_breakdown: {
-        minimality: 0,
-        safety: 0,
-        convention_match: 0,
-        side_effect_risk: 0
-      },
+      score_breakdown: { minimality: 0, safety: 0, convention_match: 0, side_effect_risk: 0 },
       score: 0,
       selected: false
     });
@@ -169,45 +173,27 @@ function normalizeStrategies(rawStrategies, selectedStrategyName) {
     bestIndex = preferredIndex;
   }
 
-  return normalized.map((strategy, index) => ({
-    ...strategy,
-    selected: index === bestIndex
-  }));
+  return normalized.map((strategy, index) => ({ ...strategy, selected: index === bestIndex }));
 }
 
 async function ensurePatchedPackageDir(targetKey) {
   const target = getTargetConfig(targetKey);
+  await fs.rm(PATCHED_PACKAGE_DIR, { recursive: true, force: true });
   await fs.mkdir(PATCHED_PACKAGE_DIR, { recursive: true });
-
-  try {
-    await fs.cp(path.join(target.vulnerableDir, 'node_modules'), path.join(PATCHED_PACKAGE_DIR, 'node_modules'), {
-      recursive: true,
-      force: true
-    });
-  } catch (error) {
-    if (!error || error.code !== 'ENOENT') {
-      throw error;
-    }
-  }
-
-  await fs.copyFile(path.join(target.vulnerableDir, 'package.json'), path.join(PATCHED_PACKAGE_DIR, 'package.json'));
+  await fs.cp(target.vulnerableDir, PATCHED_PACKAGE_DIR, { recursive: true, force: true });
 }
 
 async function writePatchedPackage(targetKey, patchedCode) {
+  const target = getTargetConfig(targetKey);
   await ensurePatchedPackageDir(targetKey);
-  await fs.writeFile(PATCHED_SOURCE_PATH, patchedCode, 'utf8');
+  const patchedSourcePath = path.join(PATCHED_PACKAGE_DIR, target.sourceRelPath || 'index.js');
+  await fs.mkdir(path.dirname(patchedSourcePath), { recursive: true });
+  await fs.writeFile(patchedSourcePath, patchedCode, 'utf8');
 }
 
 async function validatePatchedPackage(targetKey) {
-  const exploit = runExploitTest({
-    expected: 'safe',
-    targetKey,
-    modulePath: PATCHED_PACKAGE_DIR
-  });
-  const normal = runNormalTests({
-    targetKey,
-    modulePath: PATCHED_PACKAGE_DIR
-  });
+  const exploit = runExploitTest({ expected: 'safe', targetKey, modulePath: PATCHED_PACKAGE_DIR });
+  const normal = runNormalTests({ targetKey, modulePath: PATCHED_PACKAGE_DIR });
 
   return {
     exploitPassed: exploit.ok,
@@ -229,15 +215,7 @@ async function patchTarget(options = {}) {
   const attemptLog = [];
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
-    const patchResult = await generatePatch({
-      analyzerOutput,
-      sourceCode,
-      model,
-      previousAttempt,
-      target,
-      adversarialFindings
-    });
-
+    const patchResult = await generatePatch({ analyzerOutput, sourceCode, model, previousAttempt, target, adversarialFindings });
     const patchedCode = patchResult.patched_code || '';
     if (!patchedCode.trim()) {
       const error = new Error('Patcher returned empty patched_code.');
@@ -248,10 +226,12 @@ async function patchTarget(options = {}) {
     const strategies = normalizeStrategies(patchResult.strategies, patchResult.selected_strategy);
     const selectedStrategy = strategies.find((strategy) => strategy.selected) || strategies[0];
 
-    if (!hasRequiredGuards(patchedCode)) {
-      attemptLog.push({ attempt, success: false, reason: 'missing required unsafe-key guards' });
+    if (!hasRequiredGuards(patchedCode, target)) {
+      attemptLog.push({ attempt, success: false, reason: 'missing target-specific guards' });
       previousAttempt = {
-        exploitOutput: 'Rejected patch: missing one or more required key guards (__proto__, constructor, prototype).',
+        exploitOutput: target.vulnerableClass === 'Prototype Pollution'
+          ? 'Rejected patch: missing one or more required key guards (__proto__, constructor, prototype).'
+          : 'Rejected patch: generated code did not satisfy target-specific validation.',
         normalTestOutput: ''
       };
       continue;

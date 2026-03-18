@@ -453,8 +453,8 @@ const DEMO_FIXTURES = {
 
 async function ensurePatchedPackageDir(targetKey) {
   const target = getTargetConfig(targetKey);
-  await fs.mkdir(PATCHED_PACKAGE_DIR, { recursive: true });
-  await fs.copyFile(path.join(target.vulnerableDir, 'package.json'), path.join(PATCHED_PACKAGE_DIR, 'package.json'));
+  await fs.rm(PATCHED_PACKAGE_DIR, { recursive: true, force: true });
+  await fs.cp(target.vulnerableDir, PATCHED_PACKAGE_DIR, { recursive: true, force: true });
 }
 
 async function writeDemoArtifacts(targetKey = 'mixin-deep') {
@@ -463,7 +463,7 @@ async function writeDemoArtifacts(targetKey = 'mixin-deep') {
   await fs.writeFile(ANALYZER_OUTPUT_PATH, `${JSON.stringify(fixture.analyzerOutput, null, 2)}\n`, 'utf8');
   await fs.writeFile(PATCH_OUTPUT_PATH, `${JSON.stringify(fixture.patchOutput, null, 2)}\n`, 'utf8');
   await ensurePatchedPackageDir(targetKey);
-  await fs.writeFile(path.join(PATCHED_PACKAGE_DIR, 'index.js'), fixture.patchOutput.patched_code, 'utf8');
+  await fs.writeFile(path.join(PATCHED_PACKAGE_DIR, getTargetConfig(targetKey).sourceRelPath || 'index.js'), fixture.patchOutput.patched_code, 'utf8');
   return fixture;
 }
 

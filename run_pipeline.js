@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -11,7 +11,9 @@ const { runExploitTest } = require('./exploit_test');
 const { runNormalTests } = require('./normal_tests');
 const { writeDemoArtifacts } = require('./demo_mode');
 const { evaluateRun, PIPELINE_RUN_PATH } = require('./eval');
-const { getTargetConfig, parseTargetFlag } = require('./target_config');
+const { getTargetConfig, parseTargetFlag, parseInputFlag, parseCveFlag } = require('./target_config');
+const { buildCustomTarget, updateCurrentCustomTargetSource } = require('./custom_target');
+const { generateDynamicHarness } = require('./dynamic_harness');
 
 function hasDemoFlag(argv) {
   return argv.includes('--demo');
@@ -27,13 +29,7 @@ async function writeJson(filePath, value) {
 
 async function runTimedStep(runState, stepName, fn) {
   const startedAt = Date.now();
-  const stepRecord = {
-    name: stepName,
-    started_at: new Date(startedAt).toISOString(),
-    success: false,
-    attempts: 1
-  };
-
+  const stepRecord = { name: stepName, started_at: new Date(startedAt).toISOString(), success: false, attempts: 1 };
   try {
     const result = await fn();
     const endedAt = Date.now();
@@ -41,9 +37,7 @@ async function runTimedStep(runState, stepName, fn) {
     stepRecord.finished_at = new Date(endedAt).toISOString();
     stepRecord.duration_ms = endedAt - startedAt;
     stepRecord.attempts = result && typeof result.attempts === 'number' ? result.attempts : 1;
-    if (result && result.metadata) {
-      stepRecord.metadata = result.metadata;
-    }
+    if (result && result.metadata) stepRecord.metadata = result.metadata;
     runState.steps.push(stepRecord);
     return result;
   } catch (error) {
@@ -51,9 +45,7 @@ async function runTimedStep(runState, stepName, fn) {
     stepRecord.finished_at = new Date(endedAt).toISOString();
     stepRecord.duration_ms = endedAt - startedAt;
     stepRecord.error = error.message;
-    if (error && typeof error.attempts === 'number') {
-      stepRecord.attempts = error.attempts;
-    }
+    if (error && typeof error.attempts === 'number') stepRecord.attempts = error.attempts;
     runState.steps.push(stepRecord);
     runState.error_log.push(`${stepName}: ${error.message}`);
     await persistRunState(runState);
@@ -65,7 +57,6 @@ async function persistRunState(runState) {
   const now = Date.now();
   runState.last_updated_at = new Date(now).toISOString();
   runState.total_duration_ms = now - runState.started_at_ms;
-
   await writeJson(PIPELINE_RUN_PATH, {
     mode: runState.mode,
     target: runState.target,
@@ -84,10 +75,21 @@ function printTestResult(title, result) {
   console.log(result.output);
 }
 
+async function resolveTargetFromArgs(argv) {
+  const input = parseInputFlag(argv);
+  const cve = parseCveFlag(argv);
+  if (input) {
+    const customTarget = await buildCustomTarget({ input, cve });
+    await generateDynamicHarness(customTarget.key);
+    return customTarget.key;
+  }
+  return parseTargetFlag(argv);
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const demo = hasDemoFlag(argv);
-  const targetKey = parseTargetFlag(argv);
+  const targetKey = await resolveTargetFromArgs(argv);
   const target = getTargetConfig(targetKey);
   const runState = {
     mode: demo ? 'demo' : 'live',
@@ -110,36 +112,25 @@ async function main() {
 
     await runTimedStep(runState, 'scout', async () => {
       printSection(demo ? 'Scout Classification (demo mode)' : 'Scout Classification');
-
       if (demo) {
         const demoArtifacts = await writeDemoArtifacts(targetKey);
         await writeJson(CLASSIFICATION_OUTPUT_PATH, demoArtifacts.classificationOutput);
         console.log(JSON.stringify(demoArtifacts.classificationOutput, null, 2));
-        return {
-          attempts: 1,
-          metadata: {
-            source: 'demo',
-            findings: Array.isArray(demoArtifacts.classificationOutput.findings) ? demoArtifacts.classificationOutput.findings.length : 0,
-            independent_detection: Boolean(demoArtifacts.classificationOutput.independent_detection)
-          }
-        };
+        return { attempts: 1, metadata: { source: 'demo', findings: Array.isArray(demoArtifacts.classificationOutput.findings) ? demoArtifacts.classificationOutput.findings.length : 0, independent_detection: Boolean(demoArtifacts.classificationOutput.independent_detection) } };
       }
 
       const classificationOutput = await classifyVulnerabilities({ targetKey });
+      if (target.dynamic && Array.isArray(classificationOutput.findings) && classificationOutput.findings.length > 0) {
+        const preferred = classificationOutput.findings.find((finding) => finding.vulnerability_class === target.vulnerableClass) || classificationOutput.findings[0];
+        await updateCurrentCustomTargetSource(preferred.file);
+      }
       await writeJson(CLASSIFICATION_OUTPUT_PATH, classificationOutput);
       console.log(JSON.stringify(classificationOutput, null, 2));
-      return {
-        attempts: 1,
-        metadata: {
-          findings: Array.isArray(classificationOutput.findings) ? classificationOutput.findings.length : 0,
-          independent_detection: Boolean(classificationOutput.independent_detection)
-        }
-      };
+      return { attempts: 1, metadata: { findings: Array.isArray(classificationOutput.findings) ? classificationOutput.findings.length : 0, independent_detection: Boolean(classificationOutput.independent_detection) } };
     });
 
     await runTimedStep(runState, 'analysis', async () => {
       printSection(demo ? 'Spotter Analysis (demo mode)' : 'Spotter Analysis');
-
       if (demo) {
         const demoArtifacts = await writeDemoArtifacts(targetKey);
         analyzerOutput = demoArtifacts.analyzerOutput;
@@ -151,17 +142,11 @@ async function main() {
       analyzerOutput = await analyzeTargetVulnerability({ targetKey });
       await writeJson(ANALYZER_OUTPUT_PATH, analyzerOutput);
       console.log(JSON.stringify(analyzerOutput, null, 2));
-      return {
-        attempts: 1,
-        metadata: {
-          dangerous_lines: Array.isArray(analyzerOutput.dangerous_lines) ? analyzerOutput.dangerous_lines.length : 0
-        }
-      };
+      return { attempts: 1, metadata: { dangerous_lines: Array.isArray(analyzerOutput.dangerous_lines) ? analyzerOutput.dangerous_lines.length : 0 } };
     });
 
     await runTimedStep(runState, 'patch', async () => {
       printSection(demo ? 'Striker Patch (demo mode)' : 'Striker Patch');
-
       if (demo) {
         const demoArtifacts = await writeDemoArtifacts(targetKey);
         patchOutput = demoArtifacts.patchOutput;
@@ -173,10 +158,7 @@ async function main() {
       patchOutput = await patchTarget({ targetKey, analyzerOutput });
       await writeJson(PATCH_OUTPUT_PATH, patchOutput);
       console.log(patchOutput.patch_diff);
-      return {
-        attempts: patchOutput.metadata && patchOutput.metadata.attempts ? patchOutput.metadata.attempts : 1,
-        metadata: patchOutput.metadata || {}
-      };
+      return { attempts: patchOutput.metadata && patchOutput.metadata.attempts ? patchOutput.metadata.attempts : 1, metadata: patchOutput.metadata || {} };
     });
 
     const afterExploit = runExploitTest({ expected: 'safe', targetKey, modulePath: path.join(__dirname, 'patched-package') });
@@ -199,11 +181,7 @@ async function main() {
 
       if (!demo && adversarialResults.bypasses_found > 0) {
         printSection('Striker Re-engagement');
-        patchOutput = await patchTarget({
-          targetKey,
-          analyzerOutput,
-          adversarialFindings: adversarialResults.bypasses
-        });
+        patchOutput = await patchTarget({ targetKey, analyzerOutput, adversarialFindings: adversarialResults.bypasses });
         await writeJson(PATCH_OUTPUT_PATH, patchOutput);
         console.log(patchOutput.patch_diff);
         await verifyRemediation({ demo, targetKey });
@@ -212,16 +190,10 @@ async function main() {
         console.log(JSON.stringify(adversarialResults, null, 2));
       }
 
-      return {
-        attempts: adversarialResults.bypasses_found > 0 && !demo ? 2 : 1,
-        metadata: {
-          adversarial_tests_run: adversarialResults.adversarial_tests_run,
-          bypasses_found: adversarialResults.bypasses_found,
-          patch_resilience_score: adversarialResults.patch_resilience_score,
-          verdict: adversarialResults.verdict
-        }
-      };
+      return { attempts: adversarialResults.bypasses_found > 0 && !demo ? 2 : 1, metadata: { adversarial_tests_run: adversarialResults.adversarial_tests_run, bypasses_found: adversarialResults.bypasses_found, patch_resilience_score: adversarialResults.patch_resilience_score, verdict: adversarialResults.verdict } };
     });
+
+    await verifyRemediation({ demo, targetKey });
 
     runState.finished_at = new Date().toISOString();
     await persistRunState(runState);

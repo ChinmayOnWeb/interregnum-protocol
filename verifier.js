@@ -59,7 +59,7 @@ async function collectTestResults(targetKey) {
 function computeConfidenceScore({ analyzerOutput, patchOutput, testResults, adversarialResults }) {
   let score = 0;
   if (testResults.beforeExploit.ok) score += 20;
-  if (testResults.afterExploit.ok) score += 30;
+  if (testResults.beforeExploit.ok && testResults.afterExploit.ok) score += 30;
   if (testResults.beforeNormal.ok) score += 10;
   if (testResults.afterNormal.ok) score += 15;
   if (Array.isArray(analyzerOutput.dangerous_lines) && analyzerOutput.dangerous_lines.length > 0) score += 5;
@@ -137,7 +137,7 @@ ${testResults.beforeNormal.output || '(no output)'}
 
 ### After Patch
 
-- Exploit test: ${summarizeStatus(testResults.afterExploit.ok, 'PASS (prototype pollution blocked)', 'FAIL (exploit still succeeded)')}
+- Exploit test: ${summarizeStatus(testResults.afterExploit.ok, 'PASS (exploit blocked)', 'FAIL (exploit still succeeded)')}
 - Normal functionality tests: ${summarizeStatus(testResults.afterNormal.ok, 'PASS', 'FAIL')}
 
 \`\`\`text
@@ -184,7 +184,7 @@ async function verifyRemediation(options = {}) {
     readJsonOrNull(ADVERSARIAL_RESULTS_PATH)
   ]);
 
-  const adversarialResults = existingAdversarial && existingAdversarial.target === targetKey
+  const adversarialResults = existingAdversarial && existingAdversarial.target === targetKey && !target.dynamic
     ? existingAdversarial
     : await runAdversarialTests({ targetKey, patchDiff: patchOutput.patch_diff });
 

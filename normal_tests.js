@@ -2,7 +2,10 @@
 
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const { getTargetConfig, parseTargetFlag } = require('./target_config');
+const { GENERATED_HARNESS_PATH } = require('./dynamic_harness');
+const { executeDynamicScript } = require('./safe_runtime');
 
 function resolveModulePath(rawPath, targetKey) {
   if (rawPath) {
@@ -16,6 +19,10 @@ function loadModule(modulePath) {
   const resolved = require.resolve(modulePath);
   delete require.cache[resolved];
   return require(resolved);
+}
+
+function loadDynamicHarness() {
+  return JSON.parse(fs.readFileSync(GENERATED_HARNESS_PATH, 'utf8'));
 }
 
 function runMixinDeepTests(mixinDeep) {
@@ -119,15 +126,26 @@ function runRequestTests(request) {
   return tests;
 }
 
+function runDynamicTests(modulePath) {
+  const harness = loadDynamicHarness();
+  return (harness.normal_tests || []).map((test) => [
+    test.name,
+    () => executeDynamicScript(test.script, modulePath, { targetSourcePath: harness.source_rel_path || '.' })
+  ]);
+}
+
 function runNormalTests(options = {}) {
   const targetKey = options.targetKey || 'mixin-deep';
   const modulePath = options.modulePath || resolveModulePath(null, targetKey);
-  const mod = loadModule(modulePath);
-  const tests = targetKey === 'set-value'
-    ? runSetValueTests(mod)
-    : targetKey === 'request'
-      ? runRequestTests(mod)
-      : runMixinDeepTests(mod);
+  const target = getTargetConfig(targetKey);
+  const mod = target.dynamic ? null : loadModule(modulePath);
+  const tests = target.dynamic
+    ? runDynamicTests(modulePath)
+    : targetKey === 'set-value'
+      ? runSetValueTests(mod)
+      : targetKey === 'request'
+        ? runRequestTests(mod)
+        : runMixinDeepTests(mod);
 
   let failures = 0;
   const lines = [];

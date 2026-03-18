@@ -54,7 +54,11 @@ async function callOpenAIJson({ prompt, model = DEFAULT_MODEL, toolName = 'agent
   try {
     return JSON.parse(text);
   } catch (error) {
-    throw new Error(`Failed to parse JSON output: ${error.message}\nRaw output:\n${text}`);
+    try {
+      return Function('"use strict"; return (' + text + ');')();
+    } catch (fallbackError) {
+      throw new Error(`Failed to parse JSON output: ${error.message}\nRaw output:\n${text}`);
+    }
   }
 }
 
