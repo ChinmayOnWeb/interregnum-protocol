@@ -66,13 +66,27 @@ function bindStaticHandlers(state) {
     });
   });
 
-  document.getElementById('intake-form').addEventListener('submit', (event) => {
+  document.getElementById('intake-form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    const data = window.__protocolData;
     const mode = getIntakeMode();
-    state.repo = mode === 'demo' ? (document.getElementById('repo-input').value.trim() || data.packageName) : (document.getElementById('repo-input').value.trim() || data.packageName);
-    state.cve = document.getElementById('cve-input').value.trim() || data.cve;
-    state.target = document.getElementById('target-select').value;
+    const repoValue = document.getElementById('repo-input').value.trim();
+    const cveValue = document.getElementById('cve-input').value.trim();
+    const inferredTarget = mode === 'custom'
+      ? inferTargetFromInput(repoValue, state.target)
+      : document.getElementById('target-select').value;
+
+    if (inferredTarget && inferredTarget !== state.target) {
+      state.target = inferredTarget;
+      document.getElementById('target-select').value = inferredTarget;
+      await loadTarget(inferredTarget);
+    }
+
+    const data = window.__protocolData;
+    state.repo = repoValue || data.packageName;
+    state.cve = cveValue || data.cve;
+    state.target = inferredTarget || data.target;
+    document.getElementById('target-select').value = state.target;
+    updateDemoChips(state.target);
     startProtocol(state, data);
   });
 
@@ -85,7 +99,8 @@ function populateTargetSelect(targets, selectedKey) {
   const select = document.getElementById('target-select');
   const labels = {
     'mixin-deep': 'npm',
-    'set-value': 'npm'
+    'set-value': 'npm',
+    'request': 'npm'
   };
   select.innerHTML = '';
   targets.forEach((target) => {
@@ -114,6 +129,14 @@ function updateDemoChips(activeTarget) {
     const target = chip.id === 'load-demo' ? 'mixin-deep' : chip.getAttribute('data-demo-target');
     chip.classList.toggle('is-selected', target === activeTarget);
   });
+}
+
+function inferTargetFromInput(rawValue, fallbackTarget) {
+  const value = String(rawValue || '').toLowerCase();
+  if (value.includes('mixin-deep')) return 'mixin-deep';
+  if (value.includes('set-value')) return 'set-value';
+  if (value.includes('npmjs.com/package/request') || value === 'request' || value.includes('/request')) return 'request';
+  return fallbackTarget || 'mixin-deep';
 }
 
 function getIntakeMode() {

@@ -81,11 +81,53 @@ function runSetValueTests(setValue) {
   return tests;
 }
 
+function runRequestTests(request) {
+  const tests = [];
+
+  tests.push(['allows a direct https request', () => {
+    const result = request({ url: 'https://api.example.com/data', redirects: [], allowedProtocols: ['https:'] });
+    assert.equal(result.blocked, false);
+    assert.equal(result.finalUrl, 'https://api.example.com/data');
+  }]);
+
+  tests.push(['follows same-protocol https redirects', () => {
+    const result = request({
+      url: 'https://api.example.com/data',
+      redirects: ['https://cdn.example.com/data'],
+      allowedProtocols: ['https:']
+    });
+    assert.equal(result.blocked, false);
+    assert.equal(result.finalUrl, 'https://cdn.example.com/data');
+  }]);
+
+  tests.push(['blocks an initial disallowed protocol', () => {
+    const result = request({ url: 'http://internal.example', redirects: [], allowedProtocols: ['https:'] });
+    assert.equal(result.blocked, true);
+    assert.equal(result.reason, 'initial protocol blocked');
+  }]);
+
+  tests.push(['returns the final same-protocol redirect cleanly', () => {
+    const result = request({
+      url: 'https://service.example/start',
+      redirects: ['https://service.example/login', 'https://service.example/final'],
+      allowedProtocols: ['https:']
+    });
+    assert.equal(result.finalUrl, 'https://service.example/final');
+    assert.equal(result.blocked, false);
+  }]);
+
+  return tests;
+}
+
 function runNormalTests(options = {}) {
   const targetKey = options.targetKey || 'mixin-deep';
   const modulePath = options.modulePath || resolveModulePath(null, targetKey);
   const mod = loadModule(modulePath);
-  const tests = targetKey === 'set-value' ? runSetValueTests(mod) : runMixinDeepTests(mod);
+  const tests = targetKey === 'set-value'
+    ? runSetValueTests(mod)
+    : targetKey === 'request'
+      ? runRequestTests(mod)
+      : runMixinDeepTests(mod);
 
   let failures = 0;
   const lines = [];

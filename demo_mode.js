@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -291,6 +291,148 @@ const SET_VALUE_PATCH_OUTPUT = {
   patched_code: SET_VALUE_PATCHED_CODE
 };
 
+const REQUEST_CLASSIFICATION_OUTPUT = {
+  target: 'request',
+  package_name: 'request',
+  cve: 'CVE-2023-28155',
+  findings: [
+    {
+      vulnerability_class: 'Insufficient Input Validation',
+      file: 'vulnerable-package-3/index.js',
+      line: 28,
+      severity: 'high',
+      confidence: 94,
+      explanation: 'Redirect targets are followed without validating that the redirected protocol still matches the allowed protocol policy.'
+    }
+  ],
+  independent_detection: true,
+  matched_known_cve: true,
+  additional_findings: []
+};
+
+const REQUEST_ANALYZER_OUTPUT = {
+  target: 'request',
+  package_name: 'request',
+  cve: 'CVE-2023-28155',
+  root_cause:
+    'The vulnerable request flow validates the protocol of the initial URL but does not re-validate redirect targets. An attacker-controlled server can respond with a cross-protocol redirect from an allowed https URL to a blocked http URL, bypassing SSRF policy and causing the client to follow a destination that should have been rejected.',
+  dangerous_lines: [
+    { line: 17, code: 'if (!isAllowedProtocol(config.url, config.allowedProtocols)) {', reason: 'The initial request URL is validated once, which creates a false sense of safety if later redirects are not checked.' },
+    { line: 29, code: 'for (const redirectUrl of config.redirects) {', reason: 'The redirect chain is processed without any per-redirect policy enforcement.' },
+    { line: 32, code: 'current = redirectUrl;', reason: 'A redirected URL can switch protocols and bypass the original SSRF mitigation.' }
+  ],
+  patch_strategy:
+    'Re-validate every redirect target against the allowed protocol set before following it. If a redirect changes to a disallowed protocol, stop and return a blocked result instead of following the redirect.'
+};
+
+const REQUEST_STRATEGIES = [
+  {
+    name: 'Redirect Revalidation',
+    approach: 'Check each redirect target against the allowed protocol list before updating the current request URL.',
+    score_breakdown: { minimality: 24, safety: 25, convention_match: 23, side_effect_risk: 24 },
+    score: 96,
+    selected: true
+  },
+  {
+    name: 'Disable Cross-Protocol Redirects',
+    approach: 'Record the initial protocol and reject any redirect that changes protocols, regardless of the allowlist.',
+    score_breakdown: { minimality: 20, safety: 23, convention_match: 21, side_effect_risk: 20 },
+    score: 84,
+    selected: false
+  },
+  {
+    name: 'Pre-Normalize Redirect Chain',
+    approach: 'Normalize and pre-screen the entire redirect chain before any redirect is followed.',
+    score_breakdown: { minimality: 15, safety: 22, convention_match: 16, side_effect_risk: 18 },
+    score: 71,
+    selected: false
+  }
+];
+
+const REQUEST_PATCHED_CODE = `'use strict';
+
+function getProtocol(rawUrl) {
+  return new URL(rawUrl).protocol;
+}
+
+function isAllowedProtocol(rawUrl, allowedProtocols) {
+  return allowedProtocols.includes(getProtocol(rawUrl));
+}
+
+function request(options) {
+  const config = Object.assign(
+    {
+      url: '',
+      redirects: [],
+      allowedProtocols: ['https:']
+    },
+    options || {}
+  );
+
+  if (!isAllowedProtocol(config.url, config.allowedProtocols)) {
+    return {
+      ok: false,
+      blocked: true,
+      reason: 'initial protocol blocked',
+      finalUrl: config.url
+    };
+  }
+
+  let current = config.url;
+
+  for (const redirectUrl of config.redirects) {
+    if (!isAllowedProtocol(redirectUrl, config.allowedProtocols)) {
+      return {
+        ok: false,
+        blocked: true,
+        reason: 'redirect protocol blocked',
+        finalUrl: current,
+        blockedUrl: redirectUrl
+      };
+    }
+
+    current = redirectUrl;
+  }
+
+  return {
+    ok: true,
+    blocked: false,
+    finalUrl: current
+  };
+}
+
+module.exports = request;
+`;
+
+const REQUEST_PATCH_OUTPUT = {
+  target: 'request',
+  package_name: 'request',
+  cve: 'CVE-2023-28155',
+  strategies: REQUEST_STRATEGIES,
+  selected_strategy: 'Redirect Revalidation',
+  reasoning: 'Highest combined score. It is the smallest behavior-preserving patch that closes the redirect validation gap without rewriting the request flow.',
+  patch_diff: `--- a/index.js
++++ b/index.js
+@@
+   let current = config.url;
+ 
+   for (const redirectUrl of config.redirects) {
++    if (!isAllowedProtocol(redirectUrl, config.allowedProtocols)) {
++      return {
++        ok: false,
++        blocked: true,
++        reason: 'redirect protocol blocked',
++        finalUrl: current,
++        blockedUrl: redirectUrl
++      };
++    }
++
+     current = redirectUrl;
+   }
+`,
+  patched_code: REQUEST_PATCHED_CODE
+};
+
 const DEMO_FIXTURES = {
   'mixin-deep': {
     classificationOutput: MIXIN_CLASSIFICATION_OUTPUT,
@@ -301,6 +443,11 @@ const DEMO_FIXTURES = {
     classificationOutput: SET_VALUE_CLASSIFICATION_OUTPUT,
     analyzerOutput: SET_VALUE_ANALYZER_OUTPUT,
     patchOutput: SET_VALUE_PATCH_OUTPUT
+  },
+  'request': {
+    classificationOutput: REQUEST_CLASSIFICATION_OUTPUT,
+    analyzerOutput: REQUEST_ANALYZER_OUTPUT,
+    patchOutput: REQUEST_PATCH_OUTPUT
   }
 };
 

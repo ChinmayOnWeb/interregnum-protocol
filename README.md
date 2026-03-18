@@ -34,6 +34,11 @@ This prototype was built for the OpenAI Codex Hackathon at Berkeley.
 - CVE: `CVE-2019-10747`
 - Class: Prototype Pollution
 
+### 3. `request`
+- Ecosystem: `npm`
+- CVE: `CVE-2023-28155`
+- Class: SSRF / Insufficient Input Validation via cross-protocol redirect bypass
+
 ## Repo Structure
 
 - [`run_pipeline.js`](D:\UCB\CODEX\run_pipeline.js): main orchestration entrypoint
@@ -56,6 +61,7 @@ This is the most reliable hackathon path and requires no API credits.
 ```powershell
 node D:\UCB\CODEX\run_pipeline.js --demo --target mixin-deep
 node D:\UCB\CODEX\run_pipeline.js --demo --target set-value
+node D:\UCB\CODEX\run_pipeline.js --demo --target request
 ```
 
 ### Live mode with OpenAI API
@@ -64,6 +70,7 @@ node D:\UCB\CODEX\run_pipeline.js --demo --target set-value
 $env:OPENAI_API_KEY="your_key_here"
 node D:\UCB\CODEX\run_pipeline.js --target mixin-deep
 node D:\UCB\CODEX\run_pipeline.js --target set-value
+node D:\UCB\CODEX\run_pipeline.js --target request
 ```
 
 ### Run the dashboard

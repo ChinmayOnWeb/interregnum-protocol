@@ -39,6 +39,23 @@ const TARGETS = {
     demoButtonLabel: 'Run Demo (set-value)',
     dashboardSummary:
       'A crafted `__proto__.polluted` path can write attacker-controlled data onto Object.prototype in vulnerable set-value builds. This dashboard shows the issue reproduced against the vulnerable source, the path-segment guard added, and the remediation validated with real tests.'
+  },
+  'request': {
+    key: 'request',
+    packageName: 'request',
+    ecosystem: 'npm',
+    cve: 'CVE-2023-28155',
+    severity: 'Medium',
+    affectedRange: '<= 2.88.2',
+    vulnerableClass: 'Insufficient Input Validation',
+    vulnerableDir: path.join(ROOT_DIR, 'vulnerable-package-3'),
+    sourcePath: path.join(ROOT_DIR, 'vulnerable-package-3', 'index.js'),
+    cvePath: path.join(ROOT_DIR, 'cve_descriptions', 'CVE-2023-28155.txt'),
+    reportSummary:
+      '`CVE-2023-28155` affects `request` through 2.88.2. Cross-protocol redirects can bypass SSRF mitigations, and the package is no longer maintained by the original maintainer.',
+    demoButtonLabel: 'Run Demo (request)',
+    dashboardSummary:
+      'A cross-protocol redirect can bypass redirect protocol checks in vulnerable request builds. This dashboard shows the SSRF condition reproduced against the vulnerable source, the redirect validation patched, and the remediation validated with real tests.'
   }
 };
 

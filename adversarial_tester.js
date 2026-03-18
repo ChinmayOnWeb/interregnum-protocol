@@ -158,8 +158,109 @@ function makeSetValueAttempts(marker) {
   ];
 }
 
+function makeRequestAttempts() {
+  return [
+    {
+      bypass_name: 'https to http redirect',
+      payload: '{ url: "https://public.example", redirects: ["http://169.254.169.254/latest/meta-data"] }',
+      execute(request) {
+        return request({
+          url: 'https://public.example',
+          redirects: ['http://169.254.169.254/latest/meta-data'],
+          allowedProtocols: ['https:']
+        });
+      }
+    },
+    {
+      bypass_name: 'double redirect ending in http',
+      payload: '{ redirects: ["https://edge.example", "http://169.254.169.254/latest/meta-data"] }',
+      execute(request) {
+        return request({
+          url: 'https://public.example',
+          redirects: ['https://edge.example', 'http://169.254.169.254/latest/meta-data'],
+          allowedProtocols: ['https:']
+        });
+      }
+    },
+    {
+      bypass_name: 'uppercase protocol redirect',
+      payload: '{ redirects: ["HTTP://169.254.169.254/latest/meta-data"] }',
+      execute(request) {
+        return request({
+          url: 'https://public.example',
+          redirects: ['HTTP://169.254.169.254/latest/meta-data'],
+          allowedProtocols: ['https:']
+        });
+      }
+    },
+    {
+      bypass_name: 'redirect to localhost metadata endpoint',
+      payload: '{ redirects: ["http://127.0.0.1/admin"] }',
+      execute(request) {
+        return request({
+          url: 'https://public.example',
+          redirects: ['http://127.0.0.1/admin'],
+          allowedProtocols: ['https:']
+        });
+      }
+    },
+    {
+      bypass_name: 'mixed redirect chain',
+      payload: '{ redirects: ["https://cdn.example", "http://internal.example/private"] }',
+      execute(request) {
+        return request({
+          url: 'https://public.example',
+          redirects: ['https://cdn.example', 'http://internal.example/private'],
+          allowedProtocols: ['https:']
+        });
+      }
+    },
+    {
+      bypass_name: 'array redirect to link local',
+      payload: '{ redirects: ["http://169.254.169.254/latest"] }',
+      execute(request) {
+        return request({
+          url: 'https://public.example',
+          redirects: ['http://169.254.169.254/latest'],
+          allowedProtocols: ['https:']
+        });
+      }
+    },
+    {
+      bypass_name: 'redirect after safe hop',
+      payload: '{ redirects: ["https://safe.example", "http://10.0.0.5/admin"] }',
+      execute(request) {
+        return request({
+          url: 'https://public.example',
+          redirects: ['https://safe.example', 'http://10.0.0.5/admin'],
+          allowedProtocols: ['https:']
+        });
+      }
+    },
+    {
+      bypass_name: 'redirect to plain http file',
+      payload: '{ redirects: ["http://files.example/export"] }',
+      execute(request) {
+        return request({
+          url: 'https://public.example',
+          redirects: ['http://files.example/export'],
+          allowedProtocols: ['https:']
+        });
+      }
+    }
+  ];
+}
+
 function getAttempts(targetKey, marker) {
-  return targetKey === 'set-value' ? makeSetValueAttempts(marker) : makeMixinAttempts(marker);
+  if (targetKey === 'set-value') {
+    return makeSetValueAttempts(marker);
+  }
+
+  if (targetKey === 'request') {
+    return makeRequestAttempts();
+  }
+
+  return makeMixinAttempts(marker);
 }
 
 function executeAttempt(targetKey, modulePath, attempt, marker) {
@@ -167,7 +268,16 @@ function executeAttempt(targetKey, modulePath, attempt, marker) {
   const mod = loadModule(modulePath);
 
   try {
-    attempt.execute(mod);
+    const result = attempt.execute(mod);
+    if (targetKey === 'request') {
+      const bypassed = Boolean(result && result.blocked === false && /^http:/i.test(String(result.finalUrl || '')));
+      return {
+        bypass_name: attempt.bypass_name,
+        payload: attempt.payload,
+        result: bypassed ? 'BYPASSED' : 'BLOCKED',
+        severity: bypassed ? 'critical' : 'none'
+      };
+    }
   } catch (error) {
     cleanupMarker(marker);
     return {
