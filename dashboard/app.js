@@ -51,18 +51,18 @@ function bindStaticHandlers(state) {
     await loadTarget(state.target);
   });
 
-  document.getElementById('load-demo').addEventListener('click', () => {
+  document.getElementById('load-demo').addEventListener('click', async () => {
     setIntakeMode('demo');
-    applyDemoTarget(state, 'mixin-deep');
+    await applyDemoTarget(state, 'mixin-deep');
   });
 
   document.getElementById('mode-demo').addEventListener('click', () => setIntakeMode('demo'));
   document.getElementById('mode-custom').addEventListener('click', () => setIntakeMode('custom'));
 
   document.querySelectorAll('[data-demo-target]').forEach((chip) => {
-    chip.addEventListener('click', () => {
+    chip.addEventListener('click', async () => {
       setIntakeMode('demo');
-      applyDemoTarget(state, chip.getAttribute('data-demo-target') || 'mixin-deep');
+      await applyDemoTarget(state, chip.getAttribute('data-demo-target') || 'mixin-deep');
     });
   });
 
@@ -75,7 +75,7 @@ function bindStaticHandlers(state) {
       ? inferTargetFromInput(repoValue, state.target)
       : document.getElementById('target-select').value;
 
-    if (inferredTarget && inferredTarget !== state.target) {
+    if (inferredTarget && (!window.__protocolData || inferredTarget !== window.__protocolData.target)) {
       state.target = inferredTarget;
       document.getElementById('target-select').value = inferredTarget;
       await loadTarget(inferredTarget);
@@ -112,16 +112,24 @@ function populateTargetSelect(targets, selectedKey) {
   });
 }
 
-function applyDemoTarget(state, targetKey) {
-  const target = (window.__protocolData.availableTargets || []).find((item) => item.key === targetKey) || window.__protocolData.availableTargets[0];
+async function applyDemoTarget(state, targetKey) {
+  const currentTargets = (window.__protocolData && window.__protocolData.availableTargets) || [];
+  const target = currentTargets.find((item) => item.key === targetKey) || currentTargets[0];
   if (!target) return;
-  document.getElementById('target-select').value = target.key;
-  document.getElementById('repo-input').value = target.packageName;
-  document.getElementById('cve-input').value = target.cve;
-  state.target = target.key;
-  state.repo = target.packageName;
-  state.cve = target.cve;
-  updateDemoChips(target.key);
+
+  if (!window.__protocolData || window.__protocolData.target !== target.key) {
+    await loadTarget(target.key);
+  }
+
+  const freshTargets = (window.__protocolData && window.__protocolData.availableTargets) || [];
+  const freshTarget = freshTargets.find((item) => item.key === targetKey) || target;
+  document.getElementById('target-select').value = freshTarget.key;
+  document.getElementById('repo-input').value = freshTarget.packageName;
+  document.getElementById('cve-input').value = freshTarget.cve;
+  state.target = freshTarget.key;
+  state.repo = freshTarget.packageName;
+  state.cve = freshTarget.cve;
+  updateDemoChips(freshTarget.key);
 }
 
 function updateDemoChips(activeTarget) {

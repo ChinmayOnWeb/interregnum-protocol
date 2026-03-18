@@ -1,15 +1,15 @@
 {
-  "target": "mixin-deep",
-  "package_name": "mixin-deep",
-  "cve": "CVE-2019-10746",
+  "target": "request",
+  "package_name": "request",
+  "cve": "CVE-2023-28155",
   "findings": [
     {
-      "vulnerability_class": "Prototype Pollution",
-      "file": "vulnerable-package/index.js",
-      "line": 24,
+      "vulnerability_class": "Insufficient Input Validation",
+      "file": "vulnerable-package-3/index.js",
+      "line": 28,
       "severity": "high",
-      "confidence": 97,
-      "explanation": "Recursive merge logic accepts unsafe keys and can descend into the prototype chain through constructor and prototype."
+      "confidence": 94,
+      "explanation": "Redirect targets are followed without validating that the redirected protocol still matches the allowed protocol policy."
     }
   ],
   "independent_detection": true,

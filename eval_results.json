@@ -1,17 +1,17 @@
 {
-  "target": "mixin-deep",
-  "package_name": "mixin-deep",
-  "cve": "CVE-2019-10746",
-  "generated_at": "2026-03-18T05:52:21.764Z",
-  "patch_quality_score": 100,
+  "target": "request",
+  "package_name": "request",
+  "cve": "CVE-2023-28155",
+  "generated_at": "2026-03-18T06:26:35.741Z",
+  "patch_quality_score": 83,
   "patch_quality_breakdown": {
     "lines_changed": {
-      "points": 20,
+      "points": 14,
       "max_points": 20,
-      "changed_lines": 6
+      "changed_lines": 10
     },
     "convention_match": {
-      "points": 20,
+      "points": 9,
       "max_points": 20
     },
     "no_new_dependencies": {
@@ -29,27 +29,27 @@
   },
   "speed_score": 100,
   "speed": {
-    "total_pipeline_time_ms": 71,
+    "total_pipeline_time_ms": 73,
     "total_pipeline_time_seconds": 0.07,
     "per_agent_step_ms": [
       {
         "agent": "scout",
-        "duration_ms": 15,
-        "duration_seconds": 0.01
+        "duration_ms": 16,
+        "duration_seconds": 0.02
       },
       {
         "agent": "Analyzer",
-        "duration_ms": 9,
+        "duration_ms": 10,
         "duration_seconds": 0.01
       },
       {
         "agent": "Patcher",
-        "duration_ms": 8,
+        "duration_ms": 11,
         "duration_seconds": 0.01
       },
       {
         "agent": "Verifier",
-        "duration_ms": 23,
+        "duration_ms": 21,
         "duration_seconds": 0.02
       },
       {
@@ -70,7 +70,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 15,
+        "duration_ms": 16,
         "error": null
       },
       {
@@ -79,7 +79,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 9,
+        "duration_ms": 10,
         "error": null
       },
       {
@@ -88,7 +88,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 8,
+        "duration_ms": 11,
         "error": null
       },
       {
@@ -97,7 +97,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 23,
+        "duration_ms": 21,
         "error": null
       },
       {
@@ -121,20 +121,20 @@
     "exploit_before": {
       "ok": true,
       "polluted": true,
-      "output": "VULNERABLE: prototype pollution confirmed"
+      "output": "VULNERABLE: cross-protocol redirect bypass confirmed"
     },
     "exploit_after": {
       "ok": true,
       "polluted": false,
-      "output": "SAFE: prototype pollution blocked"
+      "output": "SAFE: redirect bypass blocked"
     },
     "normal_tests_before": {
       "ok": true,
-      "output": "PASS: merges nested objects\nPASS: overwrites leaf values\nPASS: merges multiple sources\nPASS: replaces arrays while preserving other nested merges\nALL NORMAL TESTS PASSED"
+      "output": "PASS: allows a direct https request\nPASS: follows same-protocol https redirects\nPASS: blocks an initial disallowed protocol\nPASS: returns the final same-protocol redirect cleanly\nALL NORMAL TESTS PASSED"
     },
     "normal_tests_after": {
       "ok": true,
-      "output": "PASS: merges nested objects\nPASS: overwrites leaf values\nPASS: merges multiple sources\nPASS: replaces arrays while preserving other nested merges\nALL NORMAL TESTS PASSED"
+      "output": "PASS: allows a direct https request\nPASS: follows same-protocol https redirects\nPASS: blocks an initial disallowed protocol\nPASS: returns the final same-protocol redirect cleanly\nALL NORMAL TESTS PASSED"
     }
   },
   "metadata": {
