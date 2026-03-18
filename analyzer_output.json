@@ -1,0 +1,24 @@
+{
+  "target": "mixin-deep",
+  "package_name": "mixin-deep",
+  "cve": "CVE-2019-10746",
+  "root_cause": "The vulnerable merge logic only blocks the \"__proto__\" key at the current property level. When attacker-controlled input uses the path constructor -> prototype -> polluted, the code reads this[\"constructor\"] from the target object, which resolves to the built-in Object constructor. The recursive mixin then descends into Object.prototype and writes attacker data there, polluting every plain object.",
+  "dangerous_lines": [
+    {
+      "line": 24,
+      "code": "if (key === '__proto__') {",
+      "reason": "This guard is incomplete because it ignores the constructor/prototype prototype-pollution path."
+    },
+    {
+      "line": 28,
+      "code": "var obj = this[key];",
+      "reason": "Reading this[\"constructor\"] resolves to Object, which gives the attacker access to Object.prototype during recursion."
+    },
+    {
+      "line": 30,
+      "code": "mixinDeep(obj, val);",
+      "reason": "Recursive descent continues into the inherited constructor/prototype chain and writes attacker-controlled properties."
+    }
+  ],
+  "patch_strategy": "Reject dangerous keys before any read or recursive merge happens. Add a shared unsafe-key check that returns true for \"__proto__\", \"constructor\", and \"prototype\", and short-circuit the copy operation for those keys. Keep the rest of the merge behavior unchanged."
+}

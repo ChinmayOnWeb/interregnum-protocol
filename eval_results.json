@@ -1,0 +1,144 @@
+{
+  "target": "mixin-deep",
+  "package_name": "mixin-deep",
+  "cve": "CVE-2019-10746",
+  "generated_at": "2026-03-18T05:52:21.764Z",
+  "patch_quality_score": 100,
+  "patch_quality_breakdown": {
+    "lines_changed": {
+      "points": 20,
+      "max_points": 20,
+      "changed_lines": 6
+    },
+    "convention_match": {
+      "points": 20,
+      "max_points": 20
+    },
+    "no_new_dependencies": {
+      "points": 10,
+      "max_points": 10
+    },
+    "vulnerability_fully_blocked": {
+      "points": 30,
+      "max_points": 30
+    },
+    "no_test_regressions": {
+      "points": 20,
+      "max_points": 20
+    }
+  },
+  "speed_score": 100,
+  "speed": {
+    "total_pipeline_time_ms": 71,
+    "total_pipeline_time_seconds": 0.07,
+    "per_agent_step_ms": [
+      {
+        "agent": "scout",
+        "duration_ms": 15,
+        "duration_seconds": 0.01
+      },
+      {
+        "agent": "Analyzer",
+        "duration_ms": 9,
+        "duration_seconds": 0.01
+      },
+      {
+        "agent": "Patcher",
+        "duration_ms": 8,
+        "duration_seconds": 0.01
+      },
+      {
+        "agent": "Verifier",
+        "duration_ms": 23,
+        "duration_seconds": 0.02
+      },
+      {
+        "agent": "Adversarial Tester",
+        "duration_ms": 5,
+        "duration_seconds": 0.01
+      }
+    ]
+  },
+  "reliability_log": {
+    "all_succeeded_on_first_try": true,
+    "retries_needed": 0,
+    "error_log": [],
+    "agents": [
+      {
+        "agent": "scout",
+        "success": true,
+        "attempts": 1,
+        "succeeded_on_first_try": true,
+        "retries_needed": 0,
+        "duration_ms": 15,
+        "error": null
+      },
+      {
+        "agent": "Analyzer",
+        "success": true,
+        "attempts": 1,
+        "succeeded_on_first_try": true,
+        "retries_needed": 0,
+        "duration_ms": 9,
+        "error": null
+      },
+      {
+        "agent": "Patcher",
+        "success": true,
+        "attempts": 1,
+        "succeeded_on_first_try": true,
+        "retries_needed": 0,
+        "duration_ms": 8,
+        "error": null
+      },
+      {
+        "agent": "Verifier",
+        "success": true,
+        "attempts": 1,
+        "succeeded_on_first_try": true,
+        "retries_needed": 0,
+        "duration_ms": 23,
+        "error": null
+      },
+      {
+        "agent": "Adversarial Tester",
+        "success": true,
+        "attempts": 1,
+        "succeeded_on_first_try": true,
+        "retries_needed": 0,
+        "duration_ms": 5,
+        "error": null
+      }
+    ]
+  },
+  "adversarial": {
+    "adversarial_tests_run": 8,
+    "bypasses_found": 0,
+    "patch_resilience_score": "100%",
+    "verdict": "HARDENED"
+  },
+  "verification_snapshot": {
+    "exploit_before": {
+      "ok": true,
+      "polluted": true,
+      "output": "VULNERABLE: prototype pollution confirmed"
+    },
+    "exploit_after": {
+      "ok": true,
+      "polluted": false,
+      "output": "SAFE: prototype pollution blocked"
+    },
+    "normal_tests_before": {
+      "ok": true,
+      "output": "PASS: merges nested objects\nPASS: overwrites leaf values\nPASS: merges multiple sources\nPASS: replaces arrays while preserving other nested merges\nALL NORMAL TESTS PASSED"
+    },
+    "normal_tests_after": {
+      "ok": true,
+      "output": "PASS: merges nested objects\nPASS: overwrites leaf values\nPASS: merges multiple sources\nPASS: replaces arrays while preserving other nested merges\nALL NORMAL TESTS PASSED"
+    }
+  },
+  "metadata": {
+    "analyzer_present": true,
+    "patch_present": true
+  }
+}

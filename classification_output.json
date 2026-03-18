@@ -1,0 +1,18 @@
+{
+  "target": "mixin-deep",
+  "package_name": "mixin-deep",
+  "cve": "CVE-2019-10746",
+  "findings": [
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "vulnerable-package/index.js",
+      "line": 24,
+      "severity": "high",
+      "confidence": 97,
+      "explanation": "Recursive merge logic accepts unsafe keys and can descend into the prototype chain through constructor and prototype."
+    }
+  ],
+  "independent_detection": true,
+  "matched_known_cve": true,
+  "additional_findings": []
+}

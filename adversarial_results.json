@@ -1,0 +1,61 @@
+{
+  "target": "mixin-deep",
+  "package_name": "mixin-deep",
+  "cve": "CVE-2019-10746",
+  "patch_diff_reviewed": true,
+  "attempts": [
+    {
+      "bypass_name": "nested __proto__ payload",
+      "payload": "JSON.parse('{\"safe\":{\"__proto__\":{\"praetorian_mixin_deep\":true}}}')",
+      "result": "BLOCKED",
+      "severity": "none"
+    },
+    {
+      "bypass_name": "constructor.prototype payload",
+      "payload": "{\"constructor\":{\"prototype\":{\"praetorian_mixin_deep\":true}}}",
+      "result": "BLOCKED",
+      "severity": "none"
+    },
+    {
+      "bypass_name": "Object.defineProperty __proto__ payload",
+      "payload": "defineProperty(payload, '__proto__', { value: { praetorian_mixin_deep: true }, enumerable: true })",
+      "result": "BLOCKED",
+      "severity": "none"
+    },
+    {
+      "bypass_name": "unicode encoded __proto__ key",
+      "payload": "{\"__pr\\u006fto__\":{\"praetorian_mixin_deep\":true}}",
+      "result": "BLOCKED",
+      "severity": "none"
+    },
+    {
+      "bypass_name": "recursive constructor chain",
+      "payload": "{\"safe\":{\"constructor\":{\"prototype\":{\"praetorian_mixin_deep\":true}}}}",
+      "result": "BLOCKED",
+      "severity": "none"
+    },
+    {
+      "bypass_name": "array based prototype vector",
+      "payload": "{\"items\":[{\"constructor\":{\"prototype\":{\"praetorian_mixin_deep\":true}}}]}",
+      "result": "BLOCKED",
+      "severity": "none"
+    },
+    {
+      "bypass_name": "double recursive pollution attempt",
+      "payload": "JSON.parse('{\"safe\":{\"deep\":{\"constructor\":{\"prototype\":{\"praetorian_mixin_deep\":true}}}}}')",
+      "result": "BLOCKED",
+      "severity": "none"
+    },
+    {
+      "bypass_name": "array path inside nested object",
+      "payload": "{\"safe\":{\"arr\":[{\"__proto__\":{\"praetorian_mixin_deep\":true}}]}}",
+      "result": "BLOCKED",
+      "severity": "none"
+    }
+  ],
+  "adversarial_tests_run": 8,
+  "bypasses_found": 0,
+  "patch_resilience_score": "100%",
+  "verdict": "HARDENED",
+  "bypasses": []
+}

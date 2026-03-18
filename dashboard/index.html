@@ -1,0 +1,309 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Project Praetorian | The Interregnum Protocol</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <div class="grid-mask"></div>
+    <div class="sigil sigil-left" aria-hidden="true"></div>
+    <div class="sigil sigil-right" aria-hidden="true"></div>
+
+    <header class="topbar shell">
+      <div class="brand-lockup">
+        <div class="brand-mark">PP</div>
+        <div>
+          <p class="eyebrow">Project Praetorian</p>
+          <h1>The Interregnum Protocol</h1>
+        </div>
+      </div>
+      <div class="top-status" id="top-status">
+        <span class="inline-icon">Guard</span>
+        <span>Scout -> Isolate -> Strike -> Verify</span>
+      </div>
+    </header>
+
+    <main class="shell app-shell">
+      <section class="screen active" id="screen-intake">
+        <div class="hero glass-card">
+          <div class="hero-copy">
+            <div class="hero-topline">
+              <div>
+                <p class="eyebrow">Package Intake</p>
+                <h2>Drop in a vulnerable package. We neutralize the threat.</h2>
+              </div>
+              <p class="hero-text">
+                The Interregnum Protocol autonomously analyzes abandoned open-source packages, generates surgical patches matching project conventions, validates fixes with real tests, and delivers decision-ready remediation artifacts in minutes, not months.
+              </p>
+            </div>
+
+            <form class="intake-form" id="intake-form">
+              <div class="mode-switch" role="tablist" aria-label="Intake mode">
+                <button class="mode-switch-button is-active" type="button" id="mode-demo" aria-pressed="true">Run demo package</button>
+                <button class="mode-switch-button" type="button" id="mode-custom" aria-pressed="false">Enter custom package</button>
+              </div>
+
+              <div class="intake-mode intake-mode-demo is-active" id="intake-mode-demo">
+                <div class="demo-group demo-group-primary">
+                  <span class="input-label subtle-label">Choose a ready-made target</span>
+                  <div class="demo-chip-row demo-chip-row-large">
+                    <button class="secondary-button demo-chip is-primary-demo" type="button" id="load-demo">mixin-deep</button>
+                    <button class="secondary-button demo-chip" type="button" data-demo-target="set-value">set-value</button>
+                  </div>
+                  <p class="mode-help">We will auto-fill the package and CVE, then run the full remediation pipeline.</p>
+                </div>
+              </div>
+
+              <div class="intake-mode intake-mode-custom" id="intake-mode-custom">
+                <div class="command-bar command-bar-simple">
+                  <input class="repo-input" id="repo-input" name="repo" type="text" value="" placeholder="Package name or repository URL" />
+                </div>
+
+                <div class="command-subrow simplified-subrow">
+                  <div class="input-stack compact-stack">
+                    <label class="input-label subtle-label" for="cve-input">Optional advisory</label>
+                    <input class="repo-input command-cve" id="cve-input" name="cve" type="text" value="" placeholder="CVE (optional)" />
+                  </div>
+                  <div class="demo-group custom-help-card">
+                    <span class="input-label subtle-label">What we need</span>
+                    <p class="mode-help">Enter a package name or repo URL. Add a CVE if you have one and we will use it to guide the investigation.</p>
+                  </div>
+                </div>
+
+                <select class="repo-input command-select is-hidden-select" id="target-select" name="target" aria-label="Target package"></select>
+              </div>
+
+              <div class="hero-actions command-actions">
+                <button class="primary-button command-launch" type="submit">
+                  <svg class="inline-svg-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path class="svg-gradient-fill" fill-rule="evenodd" clip-rule="evenodd" d="M12.9697 3.96967C13.2626 3.67678 13.7374 3.67678 14.0303 3.96967L21.5303 11.4697C21.671 11.6103 21.75 11.8011 21.75 12C21.75 12.1989 21.671 12.3897 21.5303 12.5303L14.0303 20.0303C13.7374 20.3232 13.2626 20.3232 12.9697 20.0303C12.6768 19.7374 12.6768 19.2626 12.9697 18.9697L19.1893 12.75H3C2.58579 12.75 2.25 12.4142 2.25 12C2.25 11.5858 2.58579 11.25 3 11.25H19.1893L12.9697 5.03033C12.6768 4.73744 12.6768 4.26256 12.9697 3.96967Z" />
+                  </svg>
+                  <span>Analyze &amp; Remediate</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <aside class="hero-side">
+            <div class="hero-kpi icon-kpi compact-step-card">
+              <div class="kpi-icon icon-mask icon-shield-check"></div>
+              <div>
+                <span class="stat-label">Step 1</span>
+                <strong>Scout</strong>
+                <p>Scan codebase and map conventions.</p>
+              </div>
+            </div>
+            <div class="hero-kpi icon-kpi compact-step-card">
+              <div class="kpi-icon icon-mask icon-command-line"></div>
+              <div>
+                <span class="stat-label">Step 2</span>
+                <strong>Spotter</strong>
+                <p>Trace vulnerability root cause.</p>
+              </div>
+            </div>
+            <div class="hero-kpi icon-kpi compact-step-card">
+              <div class="kpi-icon icon-mask icon-sparkles"></div>
+              <div>
+                <span class="stat-label">Step 3</span>
+                <strong>Striker</strong>
+                <p>Generate and score fix strategies.</p>
+              </div>
+            </div>
+            <div class="hero-kpi icon-kpi compact-step-card">
+              <div class="kpi-icon icon-mask icon-check-badge"></div>
+              <div>
+                <span class="stat-label">Step 4</span>
+                <strong>Validator</strong>
+                <p>Exploit test plus adversarial testing.</p>
+              </div>
+            </div>
+          </aside>
+
+          <div class="hero-stats-bar">
+            <span>500K+ at-risk packages</span>
+            <span>&lt;60s avg</span>
+            <span>$4.15B gap</span>
+            <span>2 CVEs ready</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-live">
+        <div class="screen-header">
+          <div>
+            <p class="eyebrow">Live Remediation</p>
+            <h3>Agents deploying</h3>
+          </div>
+          <div class="protocol-chip" id="protocol-target">
+            <span class="inline-icon">Signal</span>
+            <span>Acquiring target...</span>
+          </div>
+        </div>
+
+        <div class="pipeline-viz glass-card" aria-hidden="true">
+          <div class="pipeline-track"></div>
+          <div class="pipeline-node is-active" data-step="0"><span>Scout</span></div>
+          <div class="pipeline-node" data-step="1"><span>Spotter</span></div>
+          <div class="pipeline-node" data-step="2"><span>Striker</span></div>
+          <div class="pipeline-node" data-step="3"><span>Validator</span></div>
+          <div class="pipeline-node" data-step="4"><span>Adversary</span></div>
+          <div class="pipeline-node" data-step="5"><span>Debrief</span></div>
+        </div>
+
+        <div class="live-layout">
+          <div class="live-rail glass-card">
+            <div class="live-stage is-active" data-step="0"><span>01</span><div><strong>Scout - Reconnaissance</strong><p>Classify likely vulnerability classes from the codebase before reading the advisory.</p></div></div>
+            <div class="live-stage" data-step="1"><span>02</span><div><strong>Spotter - Isolation</strong><p>Trace the vulnerable code path, pinpoint root cause, assess blast radius.</p></div></div>
+            <div class="live-stage" data-step="2"><span>03</span><div><strong>Striker - Surgical Patch</strong><p>Generate multiple fix strategies, score them, then patch with the strongest option.</p></div></div>
+            <div class="live-stage" data-step="3"><span>04</span><div><strong>Validator - Verify and Extract</strong><p>Reproduce exploit, confirm fix, run regression suite, prove zero breakage.</p></div></div>
+            <div class="live-stage" data-step="4"><span>05</span><div><strong>Adversary - Break the Fix</strong><p>Attack the patch with hostile payloads and look for bypasses the validator did not cover.</p></div></div>
+            <div class="live-stage" data-step="5"><span>06</span><div><strong>Debrief - Package Results</strong><p>Compile the dashboard and detailed fix summary.</p></div></div>
+          </div>
+
+          <div class="live-main">
+            <article class="live-console glass-card">
+              <div class="panel-header"><p class="eyebrow">Agent Activity Feed</p><h3 id="live-title">Awaiting target...</h3></div>
+              <div class="console-frame"><div class="console-orb"></div><div class="terminal-stream" id="terminal-stream"></div></div>
+            </article>
+
+            <div class="live-panels">
+              <article class="snapshot-card glass-card"><div class="panel-header"><p class="eyebrow">Latest Artifact</p><h3 id="artifact-title">Pending agent output...</h3></div><pre class="artifact-preview" id="artifact-preview"></pre></article>
+              <article class="snapshot-card glass-card"><div class="panel-header"><p class="eyebrow">Pipeline Progress</p><h3 id="progress-status">Ready to deploy</h3></div><div class="progress-meter"><div class="progress-fill" id="progress-fill"></div></div><div class="mini-stats" id="mini-stats"></div></article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-results">
+        <div class="screen-header">
+          <div>
+            <p class="eyebrow">Remediation Complete</p>
+            <h3>Mission accomplished - choose your view</h3>
+          </div>
+          <div class="protocol-chip" id="results-chip"><span class="inline-icon">Verified</span><span>All agents reported in</span></div>
+        </div>
+
+        <article class="dashboard-switcher glass-card simplified-results">
+          <div class="switcher-head">
+            <div class="panel-header">
+              <p class="eyebrow">Result Views</p>
+              <h3>Switch between the operator dashboard and the detailed fix summary</h3>
+            </div>
+            <div class="view-switch" role="tablist" aria-label="Result views">
+              <button class="switch-button is-active" type="button" id="show-dashboard" aria-pressed="true">Dashboard</button>
+              <button class="switch-button" type="button" id="show-summary" aria-pressed="false">Detailed Fix Summary</button>
+            </div>
+          </div>
+
+          <div class="switcher-panel is-active" id="dashboard-view">
+            <section class="mission-dashboard">
+              <div class="big-metrics" id="big-metrics"></div>
+              <div class="chart-grid-modern">
+                <article class="chart-panel glass-card chart-panel-inner">
+                  <div class="panel-header"><p class="eyebrow">Readiness</p><h3>Confidence</h3></div>
+                  <div class="radial-wrap">
+                    <div class="radial-chart" id="confidence-chart"><div class="radial-inner"><strong id="confidence-big">100</strong><span>/100</span></div></div>
+                    <p class="chart-copy">Weighted from exploit reproduction, patch generation, regression safety, and post-fix verification.</p>
+                  </div>
+                </article>
+                <article class="chart-panel glass-card chart-panel-inner">
+                  <div class="panel-header"><p class="eyebrow">Verification</p><h3>Exploit &amp; Tests</h3></div>
+                  <div class="dual-bars">
+                    <div class="bar-row"><div class="bar-meta"><strong id="exploit-metric">100%</strong><span>Exploit blocked</span></div><div class="bar-track"><div class="bar-fill" id="exploit-bar"></div></div></div>
+                    <div class="bar-row"><div class="bar-meta"><strong id="tests-metric">100%</strong><span>Regression pass rate</span></div><div class="bar-track"><div class="bar-fill" id="tests-bar"></div></div></div>
+                    <div class="bar-row"><div class="bar-meta"><strong id="patch-metric">100%</strong><span>Patch readiness</span></div><div class="bar-track"><div class="bar-fill" id="patch-bar"></div></div></div>
+                  </div>
+                </article>
+                <article class="chart-panel glass-card chart-panel-inner">
+                  <div class="panel-header"><p class="eyebrow">Risk Profile</p><h3>Severity &amp; Exposure</h3></div>
+                  <div class="risk-bars" id="risk-bars"></div>
+                </article>
+              </div>
+
+              <div class="eval-summary-grid">
+                <article class="chart-panel glass-card chart-panel-inner">
+                  <div class="panel-header"><p class="eyebrow">Adversarial Section</p><h3>Patch Resilience</h3></div>
+                  <div class="eval-meter-grid">
+                    <div class="mini-radial" id="resilience-gauge"><div class="mini-radial-inner"><strong id="resilience-score">0</strong><span>%</span></div></div>
+                    <div class="adversarial-summary" id="adversarial-summary"></div>
+                  </div>
+                  <div class="adversarial-attempts" id="adversarial-attempts"></div>
+                </article>
+                <article class="chart-panel glass-card chart-panel-inner">
+                  <div class="panel-header"><p class="eyebrow">Scout Section</p><h3>Independent Classification</h3></div>
+                  <div class="scout-summary-grid" id="scout-summary-grid"></div>
+                  <div class="scout-findings" id="scout-findings"></div>
+                </article>
+                <article class="chart-panel glass-card chart-panel-inner">
+                  <div class="panel-header"><p class="eyebrow">Agent Eval</p><h3>Patch Quality</h3></div>
+                  <div class="eval-meter-grid">
+                    <div class="mini-radial" id="patch-quality-gauge"><div class="mini-radial-inner"><strong id="patch-quality-score">0</strong><span>/100</span></div></div>
+                    <div class="eval-breakdown" id="patch-quality-breakdown"></div>
+                  </div>
+                </article>
+                <article class="chart-panel glass-card chart-panel-inner">
+                  <div class="panel-header"><p class="eyebrow">Agent Eval</p><h3>Speed Score</h3></div>
+                  <div class="eval-speed-stack">
+                    <div class="mini-radial" id="speed-score-gauge"><div class="mini-radial-inner"><strong id="speed-score">0</strong><span>/100</span></div></div>
+                    <div class="eval-speed-meta">
+                      <div class="detail-box compact-box">
+                        <span class="stat-label">Total Pipeline Time</span>
+                        <strong class="eval-big-number" id="total-pipeline-time">0.00s</strong>
+                      </div>
+                      <div class="speed-step-list" id="speed-step-list"></div>
+                    </div>
+                  </div>
+                </article>
+                <article class="chart-panel glass-card chart-panel-inner">
+                  <div class="panel-header"><p class="eyebrow">Agent Eval</p><h3>Reliability Log</h3></div>
+                  <div class="reliability-stack">
+                    <div class="detail-box compact-box">
+                      <span class="stat-label">Retries Needed</span>
+                      <strong class="eval-big-number" id="retries-needed">0</strong>
+                    </div>
+                    <div class="reliability-list" id="reliability-list"></div>
+                    <div class="detail-box compact-box error-box">
+                      <span class="stat-label">Error Log</span>
+                      <div id="error-log">No errors recorded.</div>
+                    </div>
+                  </div>
+                </article>
+              </div>
+
+              <article class="strategy-panel glass-card chart-panel-inner">
+                <div class="panel-header"><p class="eyebrow">Striker Section</p><h3>Strategy Matrix</h3></div>
+                <p class="panel-copy" id="strategy-reasoning">Loading Striker reasoning...</p>
+                <div class="strategy-grid" id="strategy-grid"></div>
+              </article>
+
+              <article class="strategy-panel glass-card chart-panel-inner">
+                <div class="panel-header"><p class="eyebrow">Baseball Card</p><h3>At-a-glance security decision</h3></div>
+                <p class="panel-copy">Severity, maintainer status, exploit confirmation, patch readiness, test results, and a clear go or no-go recommendation in one operating view.</p>
+                <div class="stats-grid compact" id="baseball-stats"></div>
+                <div class="recommendation-card">
+                  <span class="stat-label">Recommendation</span>
+                  <strong id="recommendation">Ready for human review</strong>
+                  <p id="recommendation-copy">Loading recommendation...</p>
+                </div>
+              </article>
+            </section>
+          </div>
+
+          <div class="switcher-panel" id="summary-view">
+            <div class="panel-header"><p class="eyebrow">Detailed Fix Summary</p><h3 id="detail-title">Security summary for review</h3></div>
+            <div class="detail-body" id="detail-body"></div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
