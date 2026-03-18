@@ -63,7 +63,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Patchline dashboard running at http://localhost:${PORT}`);
+  if (process.env.PROTOCOL_DEBUG === '1') {
+    console.log(`Patchline dashboard running at http://localhost:${PORT}`);
+  }
 });
 
 function resolveStaticPath(pathname) {
