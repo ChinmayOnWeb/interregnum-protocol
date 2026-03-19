@@ -2,6 +2,7 @@
 
 const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
+const path = require('node:path');
 
 async function readJsonOrNull(filePath) {
   try {
@@ -43,9 +44,22 @@ async function readCachedArtifact(filePath, signature) {
   return parsed;
 }
 
+async function writeFileAtomic(filePath, contents, encoding = 'utf8') {
+  const directory = path.dirname(filePath);
+  const tempPath = path.join(directory, `${path.basename(filePath)}.tmp`);
+  await fs.writeFile(tempPath, contents, encoding);
+  await fs.rename(tempPath, filePath);
+}
+
+async function writeJsonAtomic(filePath, value) {
+  await writeFileAtomic(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
 module.exports = {
   readJsonOrNull,
   safeReadFile,
   createContentSignature,
-  readCachedArtifact
+  readCachedArtifact,
+  writeFileAtomic,
+  writeJsonAtomic
 };

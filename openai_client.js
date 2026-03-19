@@ -1,5 +1,7 @@
 'use strict';
 
+require('./env_loader');
+
 const DEFAULT_MODEL = process.env.OPENAI_MODEL || 'gpt-5.4-mini';
 
 async function callOpenAIJson({ prompt, model = DEFAULT_MODEL, toolName = 'agent' }) {

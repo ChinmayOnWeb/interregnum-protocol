@@ -1,10 +1,13 @@
-﻿'use strict';
+'use strict';
+
+require('./env_loader');
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { runExploitTest } = require('./exploit_test');
 const { runNormalTests } = require('./normal_tests');
 const { getTargetConfig, PATCHED_PACKAGE_DIR, parseTargetFlag } = require('./target_config');
+const { readJsonOrNull, writeJsonAtomic } = require('./cache_utils');
 
 const ROOT_DIR = __dirname;
 const PATCH_OUTPUT_PATH = path.join(ROOT_DIR, 'patch_output.json');
@@ -12,18 +15,6 @@ const ANALYZER_OUTPUT_PATH = path.join(ROOT_DIR, 'analyzer_output.json');
 const PIPELINE_RUN_PATH = path.join(ROOT_DIR, 'pipeline_run.json');
 const ADVERSARIAL_RESULTS_PATH = path.join(ROOT_DIR, 'adversarial_results.json');
 const EVAL_RESULTS_PATH = path.join(ROOT_DIR, 'eval_results.json');
-
-async function readJsonOrNull(filePath) {
-  try {
-    const raw = await fs.readFile(filePath, 'utf8');
-    return JSON.parse(raw);
-  } catch (error) {
-    if (error && error.code === 'ENOENT') {
-      return null;
-    }
-    throw error;
-  }
-}
 
 function getChangedLineCount(diffText) {
   if (!diffText) return 0;
@@ -134,12 +125,14 @@ async function evaluateRun(options = {}) {
 
   const patchDiff = patchOutput ? patchOutput.patch_diff || '' : '';
   const changedLines = getChangedLineCount(patchDiff);
+  const vulnerabilityFullyBlocked = beforeExploit.ok && afterExploit.ok;
+  const noTestRegressions = beforeNormal.ok && afterNormal.ok;
   const patchQualityBreakdown = {
     lines_changed: { points: scoreLinesChanged(changedLines), max_points: 20, changed_lines: changedLines },
     convention_match: { points: scoreConventionMatch(sourceCode, patchedCode, patchDiff), max_points: 20 },
     no_new_dependencies: { points: scoreDependencySafety(sourceCode, patchedCode), max_points: 10 },
-    vulnerability_fully_blocked: { points: beforeExploit.ok && afterExploit.ok ? 30 : 0, max_points: 30 },
-    no_test_regressions: { points: beforeNormal.ok && afterNormal.ok ? 20 : 0, max_points: 20 }
+    vulnerability_fully_blocked: { points: vulnerabilityFullyBlocked ? 30 : 0, max_points: 30 },
+    no_test_regressions: { points: noTestRegressions ? 20 : 0, max_points: 20 }
   };
 
   const patchQualityScore = Object.values(patchQualityBreakdown).reduce((sum, item) => sum + item.points, 0);
@@ -179,11 +172,12 @@ async function evaluateRun(options = {}) {
     },
     metadata: {
       analyzer_present: Boolean(analyzerOutput),
-      patch_present: Boolean(patchOutput)
+      patch_present: Boolean(patchOutput),
+      verified_remediation: vulnerabilityFullyBlocked && noTestRegressions
     }
   };
 
-  await fs.writeFile(EVAL_RESULTS_PATH, `${JSON.stringify(evalResults, null, 2)}\n`, 'utf8');
+  await writeJsonAtomic(EVAL_RESULTS_PATH, evalResults);
   return evalResults;
 }
 

@@ -1,47 +1,47 @@
 {
-  "target": "mixin-deep",
-  "package_name": "mixin-deep",
-  "cve": "CVE-2019-10746",
+  "target": "request",
+  "package_name": "request",
+  "cve": "CVE-2023-28155",
   "strategies": [
     {
-      "name": "Key Blocklist",
-      "approach": "Skip __proto__, constructor, and prototype keys before any recursive merge or assignment occurs.",
+      "name": "Redirect Revalidation",
+      "approach": "Check each redirect target against the allowed protocol list before updating the current request URL.",
       "score_breakdown": {
         "minimality": 24,
         "safety": 25,
-        "convention_match": 24,
+        "convention_match": 23,
         "side_effect_risk": 24
       },
-      "score": 97,
+      "score": 96,
       "selected": true
     },
     {
-      "name": "Null Prototype Base",
-      "approach": "Rewrite merge targets to use Object.create(null) so recursive merges never inherit a prototype chain.",
+      "name": "Disable Cross-Protocol Redirects",
+      "approach": "Record the initial protocol and reject any redirect that changes protocols, regardless of the allowlist.",
       "score_breakdown": {
-        "minimality": 10,
+        "minimality": 20,
         "safety": 23,
-        "convention_match": 12,
-        "side_effect_risk": 14
+        "convention_match": 21,
+        "side_effect_risk": 20
       },
-      "score": 59,
+      "score": 84,
       "selected": false
     },
     {
-      "name": "hasOwnProperty Guard",
-      "approach": "Gate recursion through own-property checks so inherited constructor/prototype traversal cannot continue.",
+      "name": "Pre-Normalize Redirect Chain",
+      "approach": "Normalize and pre-screen the entire redirect chain before any redirect is followed.",
       "score_breakdown": {
-        "minimality": 18,
-        "safety": 19,
-        "convention_match": 20,
+        "minimality": 15,
+        "safety": 22,
+        "convention_match": 16,
         "side_effect_risk": 18
       },
-      "score": 75,
+      "score": 71,
       "selected": false
     }
   ],
-  "selected_strategy": "Key Blocklist",
-  "reasoning": "Highest combined score. It is the smallest change, fully blocks the prototype pollution vectors, matches the existing function-based style, and carries the lowest regression risk.",
-  "patch_diff": "--- a/index.js\n+++ b/index.js\n@@\n-  if (key === '__proto__') {\n+  if (isUnsafeKey(key)) {\n     return;\n   }\n@@\n }\n+\n+function isUnsafeKey(key) {\n+  return key === '__proto__' || key === 'constructor' || key === 'prototype';\n+}",
-  "patched_code": "'use strict';\n\nvar isExtendable = require('is-extendable');\nvar forIn = require('for-in');\n\nfunction mixinDeep(target, objects) {\n  var len = arguments.length;\n  var i = 0;\n\n  while (++i < len) {\n    var obj = arguments[i];\n    if (isObject(obj)) {\n      forIn(obj, copy, target);\n    }\n  }\n  return target;\n}\n\nfunction copy(val, key) {\n  if (isUnsafeKey(key)) {\n    return;\n  }\n\n  var obj = this[key];\n  if (isObject(val) && isObject(obj)) {\n    mixinDeep(obj, val);\n  } else {\n    this[key] = val;\n  }\n}\n\nfunction isUnsafeKey(key) {\n  return key === '__proto__' || key === 'constructor' || key === 'prototype';\n}\n\nfunction isObject(val) {\n  return isExtendable(val) && !Array.isArray(val);\n}\n\nmodule.exports = mixinDeep;\n"
+  "selected_strategy": "Redirect Revalidation",
+  "reasoning": "Highest combined score. It is the smallest behavior-preserving patch that closes the redirect validation gap without rewriting the request flow.",
+  "patch_diff": "--- a/index.js\n+++ b/index.js\n@@\n   let current = config.url;\n \n   for (const redirectUrl of config.redirects) {\n+    if (!isAllowedProtocol(redirectUrl, config.allowedProtocols)) {\n+      return {\n+        ok: false,\n+        blocked: true,\n+        reason: 'redirect protocol blocked',\n+        finalUrl: current,\n+        blockedUrl: redirectUrl\n+      };\n+    }\n+\n     current = redirectUrl;\n   }\n",
+  "patched_code": "'use strict';\n\nfunction getProtocol(rawUrl) {\n  return new URL(rawUrl).protocol;\n}\n\nfunction isAllowedProtocol(rawUrl, allowedProtocols) {\n  return allowedProtocols.includes(getProtocol(rawUrl));\n}\n\nfunction request(options) {\n  const config = Object.assign(\n    {\n      url: '',\n      redirects: [],\n      allowedProtocols: ['https:']\n    },\n    options || {}\n  );\n\n  if (!isAllowedProtocol(config.url, config.allowedProtocols)) {\n    return {\n      ok: false,\n      blocked: true,\n      reason: 'initial protocol blocked',\n      finalUrl: config.url\n    };\n  }\n\n  let current = config.url;\n\n  for (const redirectUrl of config.redirects) {\n    if (!isAllowedProtocol(redirectUrl, config.allowedProtocols)) {\n      return {\n        ok: false,\n        blocked: true,\n        reason: 'redirect protocol blocked',\n        finalUrl: current,\n        blockedUrl: redirectUrl\n      };\n    }\n\n    current = redirectUrl;\n  }\n\n  return {\n    ok: true,\n    blocked: false,\n    finalUrl: current\n  };\n}\n\nmodule.exports = request;\n"
 }

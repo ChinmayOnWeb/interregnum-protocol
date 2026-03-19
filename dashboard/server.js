@@ -1,4 +1,6 @@
-﻿'use strict';
+require('../env_loader');
+
+'use strict';
 
 const http = require('node:http');
 const fs = require('node:fs/promises');
@@ -290,3 +292,5 @@ async function readJson(filePath) {
   const raw = await fs.readFile(filePath, 'utf8');
   return JSON.parse(raw);
 }
+
+

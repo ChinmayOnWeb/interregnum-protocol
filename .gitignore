@@ -12,3 +12,7 @@ adversarial_results.json
 eval_results.json
 pipeline_run.json
 REMEDIATION_REPORT.md
+.env
+.env.local
+dashboard/.env
+dashboard/.env.local

@@ -1,5 +1,7 @@
 'use strict';
 
+require('./env_loader');
+
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { classifyVulnerabilities, CLASSIFICATION_OUTPUT_PATH } = require('./classify_vulnerabilities');
@@ -15,6 +17,7 @@ const { evaluateRun, PIPELINE_RUN_PATH } = require('./eval');
 const { getTargetConfig, parseTargetFlag, parseInputFlag, parseCveFlag } = require('./target_config');
 const { buildCustomTarget, updateCurrentCustomTargetSource } = require('./custom_target');
 const { generateDynamicHarness } = require('./dynamic_harness');
+const { writeJsonAtomic } = require('./cache_utils');
 
 function hasDemoFlag(argv) {
   return argv.includes('--demo');
@@ -25,7 +28,7 @@ function printSection(title) {
 }
 
 async function writeJson(filePath, value) {
-  await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  await writeJsonAtomic(filePath, value);
 }
 
 async function runTimedStep(runState, stepName, fn) {
@@ -58,7 +61,7 @@ async function persistRunState(runState) {
   const now = Date.now();
   runState.last_updated_at = new Date(now).toISOString();
   runState.total_duration_ms = now - runState.started_at_ms;
-  await writeJson(PIPELINE_RUN_PATH, {
+  await writeJsonAtomic(PIPELINE_RUN_PATH, {
     mode: runState.mode,
     target: runState.target,
     package_name: runState.package_name,

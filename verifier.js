@@ -1,4 +1,6 @@
-﻿'use strict';
+'use strict';
+
+require('./env_loader');
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -10,6 +12,7 @@ const { runExploitTest } = require('./exploit_test');
 const { runNormalTests } = require('./normal_tests');
 const { getTargetConfig, parseTargetFlag } = require('./target_config');
 const { gatherVulnerabilityIntel, readIntelOutput, INTEL_OUTPUT_PATH } = require('./intel_gatherer');
+const { writeFileAtomic } = require('./cache_utils');
 
 const REPORT_PATH = path.join(__dirname, 'REMEDIATION_REPORT.md');
 
@@ -63,7 +66,36 @@ async function collectTestResults(targetKey) {
   };
 }
 
+function buildVerificationSummary(testResults, adversarialResults) {
+  const exploitReproduced = Boolean(testResults.beforeExploit && testResults.beforeExploit.ok);
+  const exploitBlocked = Boolean(testResults.afterExploit && testResults.afterExploit.ok);
+  const normalBehaviorPreserved = Boolean(
+    testResults.beforeNormal &&
+    testResults.beforeNormal.ok &&
+    testResults.afterNormal &&
+    testResults.afterNormal.ok
+  );
+  const adversarialClear = !adversarialResults || Number(adversarialResults.bypasses_found || 0) === 0;
+  const verifiedRemediation = exploitReproduced && exploitBlocked && normalBehaviorPreserved && adversarialClear;
+  const manualReviewReasons = [];
+
+  if (!exploitReproduced) manualReviewReasons.push('Exploit did not reproduce on the vulnerable build.');
+  if (exploitReproduced && !exploitBlocked) manualReviewReasons.push('Exploit was not blocked on the patched build.');
+  if (!normalBehaviorPreserved) manualReviewReasons.push('Normal behavior was not preserved across verification tests.');
+  if (!adversarialClear) manualReviewReasons.push('Adversarial retesting found at least one bypass.');
+
+  return {
+    exploitReproduced,
+    exploitBlocked,
+    normalBehaviorPreserved,
+    adversarialClear,
+    verifiedRemediation,
+    manualReviewReasons
+  };
+}
+
 function computeConfidenceScore({ analyzerOutput, patchOutput, testResults, adversarialResults }) {
+  const verification = buildVerificationSummary(testResults, adversarialResults);
   let score = 0;
   if (testResults.beforeExploit.ok) score += 20;
   if (testResults.beforeExploit.ok && testResults.afterExploit.ok) score += 30;
@@ -72,6 +104,12 @@ function computeConfidenceScore({ analyzerOutput, patchOutput, testResults, adve
   if (Array.isArray(analyzerOutput.dangerous_lines) && analyzerOutput.dangerous_lines.length > 0) score += 5;
   if (typeof patchOutput.patch_diff === 'string' && patchOutput.patch_diff.trim() !== '') score += 5;
   if (adversarialResults && adversarialResults.bypasses_found === 0) score += 15;
+
+  if (!verification.exploitReproduced) score = Math.min(score, 60);
+  if (verification.exploitReproduced && !verification.exploitBlocked) score = Math.min(score, 35);
+  if (!verification.normalBehaviorPreserved) score = Math.min(score, 55);
+  if (!verification.adversarialClear) score = Math.min(score, 70);
+
   return Math.min(score, 100);
 }
 
@@ -97,7 +135,11 @@ function formatAdversarialAttempts(adversarialResults) {
     .join('\n');
 }
 
-function buildReport({ target, cveDescription, intelOutput, analyzerOutput, patchOutput, testResults, confidenceScore, adversarialResults }) {
+function buildReport({ target, cveDescription, intelOutput, analyzerOutput, patchOutput, testResults, confidenceScore, adversarialResults, verification }) {
+  const manualReviewSection = verification.manualReviewReasons.length > 0
+    ? `Manual review reasons:\n${verification.manualReviewReasons.map((item) => `- ${item}`).join('\n')}\n\n`
+    : '';
+
   return `# Remediation Report
 
 ## Vulnerability Summary
@@ -180,7 +222,9 @@ ${formatAdversarialAttempts(adversarialResults)}
 
 **${confidenceScore}/100**
 
-Scoring factors:
+Verification verdict: ${verification.verifiedRemediation ? 'Verified remediation' : 'Needs manual review'}
+
+${manualReviewSection}Scoring factors:
 - vulnerability reproduced on the vulnerable build
 - exploit blocked on the patched build
 - normal behavior preserved
@@ -204,9 +248,10 @@ async function verifyRemediation(options = {}) {
     ? existingAdversarial
     : await runAdversarialTests({ targetKey, patchDiff: patchOutput.patch_diff });
 
+  const verification = buildVerificationSummary(testResults, adversarialResults);
   const confidenceScore = computeConfidenceScore({ analyzerOutput, patchOutput, testResults, adversarialResults });
-  const report = buildReport({ target, cveDescription, intelOutput, analyzerOutput, patchOutput, testResults, confidenceScore, adversarialResults });
-  await fs.writeFile(REPORT_PATH, `${report}\n`, 'utf8');
+  const report = buildReport({ target, cveDescription, intelOutput, analyzerOutput, patchOutput, testResults, confidenceScore, adversarialResults, verification });
+  await writeFileAtomic(REPORT_PATH, `${report}\n`, 'utf8');
 
   return {
     target: target.key,
@@ -215,6 +260,8 @@ async function verifyRemediation(options = {}) {
     report_path: REPORT_PATH,
     intel_path: INTEL_OUTPUT_PATH,
     confidence_score: confidenceScore,
+    verified_remediation: verification.verifiedRemediation,
+    manual_review_reasons: verification.manualReviewReasons,
     test_results: testResults,
     adversarial_results: adversarialResults
   };
@@ -240,6 +287,7 @@ if (require.main === module) {
 
 module.exports = {
   verifyRemediation,
+  buildVerificationSummary,
   computeConfidenceScore,
   REPORT_PATH
 };

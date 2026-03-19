@@ -1,40 +1,53 @@
 'use strict';
 
-var isExtendable = require('is-extendable');
-var forIn = require('for-in');
+function getProtocol(rawUrl) {
+  return new URL(rawUrl).protocol;
+}
 
-function mixinDeep(target, objects) {
-  var len = arguments.length;
-  var i = 0;
+function isAllowedProtocol(rawUrl, allowedProtocols) {
+  return allowedProtocols.includes(getProtocol(rawUrl));
+}
 
-  while (++i < len) {
-    var obj = arguments[i];
-    if (isObject(obj)) {
-      forIn(obj, copy, target);
+function request(options) {
+  const config = Object.assign(
+    {
+      url: '',
+      redirects: [],
+      allowedProtocols: ['https:']
+    },
+    options || {}
+  );
+
+  if (!isAllowedProtocol(config.url, config.allowedProtocols)) {
+    return {
+      ok: false,
+      blocked: true,
+      reason: 'initial protocol blocked',
+      finalUrl: config.url
+    };
+  }
+
+  let current = config.url;
+
+  for (const redirectUrl of config.redirects) {
+    if (!isAllowedProtocol(redirectUrl, config.allowedProtocols)) {
+      return {
+        ok: false,
+        blocked: true,
+        reason: 'redirect protocol blocked',
+        finalUrl: current,
+        blockedUrl: redirectUrl
+      };
     }
-  }
-  return target;
-}
 
-function copy(val, key) {
-  if (isUnsafeKey(key)) {
-    return;
+    current = redirectUrl;
   }
 
-  var obj = this[key];
-  if (isObject(val) && isObject(obj)) {
-    mixinDeep(obj, val);
-  } else {
-    this[key] = val;
-  }
+  return {
+    ok: true,
+    blocked: false,
+    finalUrl: current
+  };
 }
 
-function isUnsafeKey(key) {
-  return key === '__proto__' || key === 'constructor' || key === 'prototype';
-}
-
-function isObject(val) {
-  return isExtendable(val) && !Array.isArray(val);
-}
-
-module.exports = mixinDeep;
+module.exports = request;
