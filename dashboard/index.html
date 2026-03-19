@@ -63,18 +63,30 @@
               </div>
 
               <div class="intake-mode intake-mode-custom" id="intake-mode-custom">
+                <div class="intake-warning-card">
+                  <p class="eyebrow">Prototype Scope</p>
+                  <h3>Do not paste just any repo.</h3>
+                  <p class="mode-help">This prototype works best on Node.js and npm-style packages where we can identify one vulnerable package entrypoint and reproduce a known vulnerability.</p>
+                  <ul class="warning-list">
+                    <li>Enter an npm package name like <code>request</code> or <code>set-value</code>.</li>
+                    <li>Or enter a GitHub repo URL for the vulnerable package, like <code>https://github.com/request/request</code>.</li>
+                    <li>Add a CVE when you have one. Best results come from known vulnerable package versions and a clear advisory.</li>
+                    <li>Avoid unrelated repos, large monorepos, apps without a package entrypoint, or projects with no known vulnerability context.</li>
+                  </ul>
+                </div>
+
                 <div class="command-bar command-bar-simple">
-                  <input class="repo-input" id="repo-input" name="repo" type="text" value="" placeholder="Package name or repository URL" />
+                  <input class="repo-input" id="repo-input" name="repo" type="text" value="" placeholder="What we need: npm package name or GitHub repo URL for the vulnerable package" />
                 </div>
 
                 <div class="command-subrow simplified-subrow">
                   <div class="input-stack compact-stack">
-                    <label class="input-label subtle-label" for="cve-input">Optional advisory</label>
-                    <input class="repo-input command-cve" id="cve-input" name="cve" type="text" value="" placeholder="CVE (optional)" />
+                    <label class="input-label subtle-label" for="cve-input">Known advisory</label>
+                    <input class="repo-input command-cve" id="cve-input" name="cve" type="text" value="" placeholder="CVE-2023-28155 (recommended)" />
                   </div>
-                  <div class="demo-group custom-help-card">
-                    <span class="input-label subtle-label">What we need</span>
-                    <p class="mode-help">Enter a package name or repo URL. Add a CVE if you have one and we will use it to guide the investigation.</p>
+                  <div class="demo-group custom-help-card" id="custom-intake-help">
+                    <span class="input-label subtle-label">Exactly what to enter</span>
+                    <p class="mode-help">Give us 1. the npm package name or GitHub repo URL for the vulnerable package, and 2. the CVE if known. If you are unsure, use one of the demo packages instead of a random repo.</p>
                   </div>
                 </div>
 
@@ -304,3 +316,4 @@
     <script src="/app.js"></script>
   </body>
 </html>
+

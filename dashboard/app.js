@@ -143,6 +143,11 @@ function bindStaticHandlers(state) {
       ? inferTargetFromInput(repoValue)
       : document.getElementById('target-select').value;
 
+    if (mode === 'custom' && !repoValue) {
+      window.alert('Enter 1. an npm package name or GitHub repo URL for the vulnerable package, and 2. the CVE if you know it. If you are unsure, use a demo package instead of a random repo.');
+      return;
+    }
+
     if (mode === 'custom' && !inferredTarget) {
       showPreparingState(repoValue, cveValue);
       const prepared = await prepareCustomTarget(repoValue, cveValue);
@@ -1675,6 +1680,7 @@ function showPreparingState(repoValue, cveValue) {
   });
   startPreparationPolling();
 }
+
 
 
 
