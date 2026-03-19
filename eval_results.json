@@ -1,17 +1,17 @@
 {
-  "target": "request",
-  "package_name": "request",
-  "cve": "CVE-2023-28155",
-  "generated_at": "2026-03-18T06:26:35.741Z",
-  "patch_quality_score": 83,
+  "target": "mixin-deep",
+  "package_name": "mixin-deep",
+  "cve": "CVE-2019-10746",
+  "generated_at": "2026-03-18T21:11:24.613Z",
+  "patch_quality_score": 100,
   "patch_quality_breakdown": {
     "lines_changed": {
-      "points": 14,
+      "points": 20,
       "max_points": 20,
-      "changed_lines": 10
+      "changed_lines": 6
     },
     "convention_match": {
-      "points": 9,
+      "points": 20,
       "max_points": 20
     },
     "no_new_dependencies": {
@@ -27,35 +27,35 @@
       "max_points": 20
     }
   },
-  "speed_score": 100,
+  "speed_score": 41,
   "speed": {
-    "total_pipeline_time_ms": 73,
-    "total_pipeline_time_seconds": 0.07,
+    "total_pipeline_time_ms": 54887,
+    "total_pipeline_time_seconds": 54.89,
     "per_agent_step_ms": [
       {
         "agent": "scout",
-        "duration_ms": 16,
-        "duration_seconds": 0.02
+        "duration_ms": 4491,
+        "duration_seconds": 4.49
       },
       {
         "agent": "Analyzer",
-        "duration_ms": 10,
-        "duration_seconds": 0.01
+        "duration_ms": 2931,
+        "duration_seconds": 2.93
       },
       {
         "agent": "Patcher",
-        "duration_ms": 11,
-        "duration_seconds": 0.01
+        "duration_ms": 46923,
+        "duration_seconds": 46.92
       },
       {
         "agent": "Verifier",
-        "duration_ms": 21,
-        "duration_seconds": 0.02
+        "duration_ms": 31,
+        "duration_seconds": 0.03
       },
       {
         "agent": "Adversarial Tester",
-        "duration_ms": 5,
-        "duration_seconds": 0.01
+        "duration_ms": 27,
+        "duration_seconds": 0.03
       }
     ]
   },
@@ -70,7 +70,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 16,
+        "duration_ms": 4491,
         "error": null
       },
       {
@@ -79,7 +79,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 10,
+        "duration_ms": 2931,
         "error": null
       },
       {
@@ -88,7 +88,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 11,
+        "duration_ms": 46923,
         "error": null
       },
       {
@@ -97,7 +97,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 21,
+        "duration_ms": 31,
         "error": null
       },
       {
@@ -106,7 +106,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 5,
+        "duration_ms": 27,
         "error": null
       }
     ]
@@ -121,20 +121,20 @@
     "exploit_before": {
       "ok": true,
       "polluted": true,
-      "output": "VULNERABLE: cross-protocol redirect bypass confirmed"
+      "output": "VULNERABLE: prototype pollution confirmed"
     },
     "exploit_after": {
       "ok": true,
       "polluted": false,
-      "output": "SAFE: redirect bypass blocked"
+      "output": "SAFE: prototype pollution blocked"
     },
     "normal_tests_before": {
       "ok": true,
-      "output": "PASS: allows a direct https request\nPASS: follows same-protocol https redirects\nPASS: blocks an initial disallowed protocol\nPASS: returns the final same-protocol redirect cleanly\nALL NORMAL TESTS PASSED"
+      "output": "PASS: merges nested objects\nPASS: overwrites leaf values\nPASS: merges multiple sources\nPASS: replaces arrays while preserving other nested merges\nALL NORMAL TESTS PASSED"
     },
     "normal_tests_after": {
       "ok": true,
-      "output": "PASS: allows a direct https request\nPASS: follows same-protocol https redirects\nPASS: blocks an initial disallowed protocol\nPASS: returns the final same-protocol redirect cleanly\nALL NORMAL TESTS PASSED"
+      "output": "PASS: merges nested objects\nPASS: overwrites leaf values\nPASS: merges multiple sources\nPASS: replaces arrays while preserving other nested merges\nALL NORMAL TESTS PASSED"
     }
   },
   "metadata": {

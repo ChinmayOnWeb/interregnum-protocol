@@ -7,9 +7,15 @@ const { analyzeTargetVulnerability } = require('./analyzer');
 const { runExploitTest } = require('./exploit_test');
 const { runNormalTests } = require('./normal_tests');
 const { getTargetConfig, PATCHED_PACKAGE_DIR, parseTargetFlag } = require('./target_config');
+const { gatherVulnerabilityIntel, readIntelOutput } = require('./intel_gatherer');
+const { writePreparationStatus } = require('./custom_target');
 
 const ANALYZER_OUTPUT_PATH = path.join(__dirname, 'analyzer_output.json');
 const PATCH_OUTPUT_PATH = path.join(__dirname, 'patch_output.json');
+const PATCH_TIMEOUT_MS = Number(process.env.PATCH_TIMEOUT_MS || 60000);
+const PATCH_DESCRIPTION_TIMEOUT_MS = Number(process.env.PATCH_DESCRIPTION_TIMEOUT_MS || 30000);
+const PATCH_MAX_TOKENS = Number(process.env.PATCH_MAX_TOKENS || 4000);
+const PATCH_HEARTBEAT_MS = Number(process.env.PATCH_HEARTBEAT_MS || 4000);
 
 async function readSourceCode(targetKey) {
   return fs.readFile(getTargetConfig(targetKey).sourcePath, 'utf8');
@@ -27,96 +33,582 @@ async function readAnalyzerOutput(targetKey, filePath = ANALYZER_OUTPUT_PATH) {
   }
 }
 
-function buildPatchPrompt({ analyzerOutput, sourceCode, previousAttempt, target, adversarialFindings }) {
-  const prototypePollutionTarget = target.vulnerableClass === 'Prototype Pollution';
-  const remediationRules = prototypePollutionTarget
-    ? [
-        'The patch must block prototype pollution through all of these keys:',
-        '- __proto__',
-        '- constructor',
-        '- prototype'
-      ]
-    : [
-        `Remediate the vulnerability class: ${target.vulnerableClass}.`,
-        'Close the dangerous code path identified by the analyzer while preserving safe package behavior.'
-      ];
+function withTimeout(promise, timeoutMs, label) {
+  let timer = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+  });
 
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientPatchError(error) {
+  const message = String(error && error.message ? error.message : '').toLowerCase();
+  return (
+    message.includes('502') ||
+    message.includes('503') ||
+    message.includes('504') ||
+    message.includes('429') ||
+    message.includes('timed out') ||
+    message.includes('fetch failed') ||
+    message.includes('bad gateway') ||
+    message.includes('network')
+  );
+}
+
+function approxTokenCount(text) {
+  return Math.ceil(String(text || '').length / 4);
+}
+
+function countBraces(line) {
+  const opens = (line.match(/\{/g) || []).length;
+  const closes = (line.match(/\}/g) || []).length;
+  return opens - closes;
+}
+
+function looksLikeFunctionStart(line) {
+  const text = String(line || '').trim();
+  return (
+    /^function\b/.test(text) ||
+    /^[A-Za-z_$][\w$]*\s*:\s*function\b/.test(text) ||
+    /^[A-Za-z_$][\w$]*\s*=\s*(async\s+)?function\b/.test(text) ||
+    /^[A-Za-z_$][\w$]*\s*=\s*\([^)]*\)\s*=>\s*\{?/.test(text) ||
+    /^(async\s+)?[A-Za-z_$][\w$]*\s*\([^)]*\)\s*\{/.test(text)
+  );
+}
+
+function extractFunctionName(line) {
+  const text = String(line || '').trim();
+  let match = text.match(/^function\s+([A-Za-z_$][\w$]*)/);
+  if (match) return match[1];
+  match = text.match(/^([A-Za-z_$][\w$]*)\s*:\s*function/);
+  if (match) return match[1];
+  match = text.match(/^([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function/);
+  if (match) return match[1];
+  match = text.match(/^([A-Za-z_$][\w$]*)\s*=\s*\(/);
+  if (match) return match[1];
+  match = text.match(/^(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(/);
+  return match ? match[1] : 'anonymous';
+}
+
+function findPrimaryDangerLine(analyzerOutput) {
+  const dangerousLines = Array.isArray(analyzerOutput && analyzerOutput.dangerous_lines) ? analyzerOutput.dangerous_lines : [];
+  for (const entry of dangerousLines) {
+    const lineNumber = Number(entry && entry.line);
+    if (lineNumber > 0) return lineNumber;
+  }
+  return 1;
+}
+
+function findEnclosingFunctionBounds(lines, targetLine) {
+  const index = Math.max(0, Math.min(lines.length - 1, Number(targetLine || 1) - 1));
+
+  for (let start = index; start >= Math.max(0, index - 250); start -= 1) {
+    const candidate = lines[start];
+    if (!candidate.includes('{') || !looksLikeFunctionStart(candidate)) {
+      continue;
+    }
+
+    let balance = 0;
+    let seenOpen = false;
+    for (let end = start; end < Math.min(lines.length, start + 600); end += 1) {
+      balance += countBraces(lines[end]);
+      if (lines[end].includes('{')) seenOpen = true;
+      if (seenOpen && balance <= 0) {
+        return {
+          startLine: start + 1,
+          endLine: end + 1,
+          functionName: extractFunctionName(candidate)
+        };
+      }
+    }
+  }
+
+  return {
+    startLine: Math.max(1, targetLine - 30),
+    endLine: Math.min(lines.length, targetLine + 30),
+    functionName: 'unknown'
+  };
+}
+
+function sliceLines(lines, startLine, endLine) {
+  return lines.slice(Math.max(0, startLine - 1), Math.min(lines.length, endLine)).join('\n');
+}
+
+function buildLineWindow(lines, centerLine, radius) {
+  const startLine = Math.max(1, centerLine - radius);
+  const endLine = Math.min(lines.length, centerLine + radius);
+  return {
+    startLine,
+    endLine,
+    text: sliceLines(lines, startLine, endLine)
+  };
+}
+
+function trimFixDiff(fixDiff) {
+  const lines = String(fixDiff || '').split('\n');
+  return lines.slice(0, 220).join('\n');
+}
+
+function buildPatchContext(sourceCode, analyzerOutput, intelOutput) {
+  const lines = String(sourceCode || '').split('\n');
+  const primaryDangerLine = findPrimaryDangerLine(analyzerOutput);
+  const bounds = findEnclosingFunctionBounds(lines, primaryDangerLine);
+  const functionText = sliceLines(lines, bounds.startLine, bounds.endLine);
+  const contextualStart = Math.max(1, bounds.startLine - 30);
+  const contextualEnd = Math.min(lines.length, bounds.endLine + 30);
+  const contextualText = sliceLines(lines, contextualStart, contextualEnd);
+
+  let selected = {
+    mode: 'function-with-context',
+    startLine: contextualStart,
+    endLine: contextualEnd,
+    text: contextualText
+  };
+
+  const warnings = [];
+  const originalLineCount = contextualEnd - contextualStart + 1;
+
+  if (originalLineCount > 200 || approxTokenCount(selected.text) > PATCH_MAX_TOKENS) {
+    selected = {
+      mode: 'function-only',
+      startLine: bounds.startLine,
+      endLine: bounds.endLine,
+      text: functionText
+    };
+    warnings.push(`Context trimmed from ${originalLineCount} to ${bounds.endLine - bounds.startLine + 1} lines`);
+  }
+
+  if ((selected.endLine - selected.startLine + 1) > 160 || approxTokenCount(selected.text) > PATCH_MAX_TOKENS) {
+    const tightWindow = buildLineWindow(lines, primaryDangerLine, 50);
+    selected = {
+      mode: 'tight-window',
+      startLine: tightWindow.startLine,
+      endLine: tightWindow.endLine,
+      text: tightWindow.text
+    };
+    warnings.push(`Context trimmed from ${originalLineCount} to ${tightWindow.endLine - tightWindow.startLine + 1} lines`);
+  }
+
+  return {
+    sourceLines: lines,
+    fullSource: sourceCode,
+    targetLine: primaryDangerLine,
+    targetFilePath: analyzerOutput && analyzerOutput.target_file_path ? analyzerOutput.target_file_path : null,
+    targetFunctionName: bounds.functionName,
+    functionStartLine: bounds.startLine,
+    functionEndLine: bounds.endLine,
+    functionText,
+    selectedContext: selected,
+    functionOnlyContext: {
+      mode: 'function-only',
+      startLine: bounds.startLine,
+      endLine: bounds.endLine,
+      text: functionText
+    },
+    tightLineContext: {
+      mode: 'tight-window',
+      startLine: Math.max(1, primaryDangerLine - 50),
+      endLine: Math.min(lines.length, primaryDangerLine + 50),
+      text: sliceLines(lines, Math.max(1, primaryDangerLine - 50), Math.min(lines.length, primaryDangerLine + 50))
+    },
+    analyzerRootCause: analyzerOutput && analyzerOutput.root_cause ? analyzerOutput.root_cause : '',
+    dangerousLines: Array.isArray(analyzerOutput && analyzerOutput.dangerous_lines) ? analyzerOutput.dangerous_lines : [],
+    intelSummary: {
+      cwe: intelOutput && intelOutput.cwe ? intelOutput.cwe : null,
+      cwe_name: intelOutput && intelOutput.cwe_name ? intelOutput.cwe_name : null,
+      fix_commit_url: intelOutput && intelOutput.fix_commit_url ? intelOutput.fix_commit_url : null,
+      fix_diff: trimFixDiff(intelOutput && intelOutput.fix_diff ? intelOutput.fix_diff : '')
+    },
+    warnings
+  };
+}
+
+function startProgressHeartbeat(target, initialMessage, progress = 94) {
+  if (!target || !target.dynamic) {
+    return {
+      update() {},
+      stop() {}
+    };
+  }
+
+  let message = initialMessage;
+  const write = () => writePreparationStatus({
+    target: target.key,
+    packageName: target.packageName,
+    cve: target.cve,
+    status: 'running',
+    phase: 'remediate',
+    progress,
+    message
+  }).catch(() => {});
+
+  write();
+  const interval = setInterval(write, PATCH_HEARTBEAT_MS);
+
+  return {
+    update(nextMessage, nextProgress = progress) {
+      message = nextMessage;
+      progress = nextProgress;
+      write();
+    },
+    stop() {
+      clearInterval(interval);
+    }
+  };
+}
+
+function buildKnownFixPrompt({ context, target, adversarialFindings, previousAttempt, mode }) {
   const retryContext = previousAttempt
     ? [
         '',
         'PREVIOUS PATCH ATTEMPT FAILED VALIDATION.',
-        `Exploit test stderr/stdout: ${previousAttempt.exploitOutput || '(no output)'}`,
-        `Normal test stderr/stdout: ${previousAttempt.normalTestOutput || '(no output)'}`,
-        'Generate a safer minimal patch.'
+        `Exploit output: ${previousAttempt.exploitOutput || '(no output)'}`,
+        `Normal test output: ${previousAttempt.normalTestOutput || '(no output)'}`
       ].join('\n')
     : '';
 
   const adversarialContext = Array.isArray(adversarialFindings) && adversarialFindings.length > 0
     ? [
         '',
-        'ADVERSARIAL BYPASSES WERE FOUND AGAINST THE PREVIOUS FIX.',
-        'The next patch must explicitly address these bypass attempts:',
+        'ADVERSARIAL BYPASSES TO ADDRESS:',
+        JSON.stringify(adversarialFindings, null, 2)
+      ].join('\n')
+    : '';
+
+  return [
+    'You are the Striker patch adaptation agent.',
+    `Package: ${target.packageName}`,
+    `CWE: ${context.intelSummary.cwe || 'unknown'}${context.intelSummary.cwe_name ? ` (${context.intelSummary.cwe_name})` : ''}`,
+    `Target file: ${target.sourceRelPath || 'index.js'}`,
+    `Target function: ${context.targetFunctionName}`,
+    `Target lines: ${context.functionStartLine}-${context.functionEndLine}`,
+    `Context mode: ${mode}`,
+    'Here is the known fix diff for this vulnerability.',
+    context.intelSummary.fix_diff,
+    '',
+    'Here is the current vulnerable function that must be patched and returned.',
+    context.functionText,
+    '',
+    'Nearby context for orientation only:',
+    context.selectedContext.text,
+    '',
+    'Apply the same fix pattern to this code.',
+    'Return strict JSON only with this schema:',
+    '{',
+    '  "approach": "string",',
+    '  "reasoning": "string",',
+    '  "patched_function": "string"',
+    '}',
+    'Return only the patched function/body, not the full file and not the surrounding context.',
+    retryContext,
+    adversarialContext
+  ].join('\n');
+}
+
+function buildFocusedPatchPrompt({ context, target, adversarialFindings, previousAttempt, mode }) {
+  const retryContext = previousAttempt
+    ? [
+        '',
+        'PREVIOUS PATCH ATTEMPT FAILED VALIDATION.',
+        `Exploit output: ${previousAttempt.exploitOutput || '(no output)'}`,
+        `Normal test output: ${previousAttempt.normalTestOutput || '(no output)'}`
+      ].join('\n')
+    : '';
+
+  const adversarialContext = Array.isArray(adversarialFindings) && adversarialFindings.length > 0
+    ? [
+        '',
+        'ADVERSARIAL BYPASSES TO ADDRESS:',
         JSON.stringify(adversarialFindings, null, 2)
       ].join('\n')
     : '';
 
   return [
     'You are the Striker patch generation agent.',
-    `Patch the vulnerable JavaScript source for package ${target.packageName} with the smallest practical change.`,
-    'First propose exactly 3 different fix strategies.',
-    'For each strategy, score these dimensions from 0 to 25:',
-    '- minimality',
-    '- safety',
-    '- convention_match',
-    '- side_effect_risk',
-    'The total score should be the sum of the four dimensions, on a 0-100 scale.',
-    'Then choose the best strategy, explain why it wins, and generate the actual patch using that strategy.',
-    ...remediationRules,
-    'Preserve existing package conventions and keep the patch minimal.',
-    'Return strict JSON with this schema:',
+    `Patch the vulnerable JavaScript code for package ${target.packageName}.`,
+    `Target file: ${target.sourceRelPath || 'index.js'}`,
+    `Target function: ${context.targetFunctionName}`,
+    `Target lines: ${context.functionStartLine}-${context.functionEndLine}`,
+    `Context mode: ${mode}`,
+    `Root cause: ${context.analyzerRootCause}`,
+    'Dangerous lines:',
+    JSON.stringify(context.dangerousLines, null, 2),
+    '',
+    'Vulnerability intelligence:',
+    JSON.stringify(context.intelSummary, null, 2),
+    '',
+    'Target vulnerable function to patch and return:',
+    context.functionText,
+    '',
+    'Nearby context for orientation only:',
+    context.selectedContext.text,
+    '',
+    'Return strict JSON only with this schema:',
     '{',
-    '  "strategies": [',
-    '    {',
-    '      "name": "string",',
-    '      "approach": "string",',
-    '      "score_breakdown": {',
-    '        "minimality": number,',
-    '        "safety": number,',
-    '        "convention_match": number,',
-    '        "side_effect_risk": number',
-    '      },',
-    '      "score": number,',
-    '      "selected": boolean',
-    '    }',
-    '  ],',
-    '  "selected_strategy": "string",',
+    '  "approach": "string",',
     '  "reasoning": "string",',
-    '  "patch_diff": "string",',
-    '  "patched_code": "string"',
+    '  "patched_function": "string"',
     '}',
-    'Use exactly 3 strategy objects.',
-    'Exactly one strategy must have selected=true.',
-    'The selected strategy must have the highest score.',
-    `The patch_diff should be a minimal unified diff for ${target.sourceRelPath || 'index.js'} only.`,
-    'The patched_code should be the full fixed file contents.',
-    'Do not include markdown fences or any extra commentary.',
-    '',
-    'ANALYZER OUTPUT:',
-    JSON.stringify(analyzerOutput, null, 2),
-    '',
-    'VULNERABLE SOURCE FILE:',
-    sourceCode,
+    'Patch only the target function/body and return only that function/body.',
     retryContext,
     adversarialContext
   ].join('\n');
 }
 
-async function generatePatch({ analyzerOutput, sourceCode, model, previousAttempt, target, adversarialFindings }) {
-  return callOpenAIJson({
-    prompt: buildPatchPrompt({ analyzerOutput, sourceCode, previousAttempt, target, adversarialFindings }),
-    model,
-    toolName: 'patcher'
+function buildDescriptionOnlyPrompt({ context, target }) {
+  return [
+    'You are the Striker remediation planning agent.',
+    `Package: ${target.packageName}`,
+    `Target file: ${target.sourceRelPath || 'index.js'}`,
+    `Target function: ${context.targetFunctionName}`,
+    `Target lines: ${context.functionStartLine}-${context.functionEndLine}`,
+    `Root cause: ${context.analyzerRootCause}`,
+    'Known vulnerability intelligence:',
+    JSON.stringify(context.intelSummary, null, 2),
+    '',
+    'Code under review:',
+    context.functionOnlyContext.text,
+    '',
+    'Return strict JSON only with this schema:',
+    '{',
+    '  "approach": "string",',
+    '  "reasoning": "string",',
+    '  "suggested_changes": ["string"]',
+    '}',
+    'Do not return patched code. Describe the minimum safe manual fix.'
+  ].join('\n');
+}
+
+async function callPatchModel({ prompt, model, timeoutMs, toolName }) {
+  return withTimeout(
+    callOpenAIJson({ prompt, model, toolName }),
+    timeoutMs,
+    `${toolName} model call`
+  );
+}
+
+function normalizePatchedFunction(raw, context) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+
+  const selected = String(context.selectedContext.text || '').trim();
+  if (value === selected) {
+    return context.functionText;
+  }
+
+  return value;
+}
+
+function replaceFunctionInSource(fullSource, context, patchedFunction) {
+  const sourceLines = String(fullSource || '').split('\n');
+  const patchLines = String(patchedFunction || '').split('\n');
+  const start = Math.max(0, context.functionStartLine - 1);
+  const deleteCount = Math.max(0, context.functionEndLine - context.functionStartLine + 1);
+  sourceLines.splice(start, deleteCount, ...patchLines);
+  return sourceLines.join('\n');
+}
+
+function formatDiffLine(prefix, line) {
+  return `${prefix}${line}`;
+}
+
+function buildUnifiedDiff(target, context, originalFunction, patchedFunction) {
+  const oldLines = String(originalFunction || '').split('\n');
+  const newLines = String(patchedFunction || '').split('\n');
+  const diffLines = [
+    `--- a/${target.sourceRelPath || 'index.js'}`,
+    `+++ b/${target.sourceRelPath || 'index.js'}`,
+    `@@ -${context.functionStartLine},${oldLines.length} +${context.functionStartLine},${newLines.length} @@`
+  ];
+
+  oldLines.forEach((line) => diffLines.push(formatDiffLine('-', line)));
+  newLines.forEach((line) => diffLines.push(formatDiffLine('+', line)));
+  return diffLines.join('\n');
+}
+
+function buildManualReviewResult({ target, sourceCode, context, fixDescription, failureReason, warnings, intelOutput }) {
+  return {
+    target: target.key,
+    package_name: target.packageName,
+    cve: target.cve,
+    strategies: [
+      {
+        name: 'Manual Review Required',
+        approach: fixDescription && fixDescription.approach ? fixDescription.approach : 'Use the analyzer and intelligence artifacts to apply the smallest safe manual fix.',
+        score_breakdown: { minimality: 0, safety: 0, convention_match: 0, side_effect_risk: 0 },
+        score: 0,
+        selected: true
+      }
+    ],
+    selected_strategy: 'Manual Review Required',
+    reasoning: [
+      failureReason ? `Automated patch generation could not complete: ${failureReason}` : 'Automated patch generation could not complete.',
+      fixDescription && fixDescription.reasoning ? fixDescription.reasoning : '',
+      Array.isArray(fixDescription && fixDescription.suggested_changes) ? `Suggested changes: ${fixDescription.suggested_changes.join(' | ')}` : ''
+    ].filter(Boolean).join(' '),
+    patch_diff: '',
+    patched_code: sourceCode,
+    applied_known_fix_pattern: false,
+    manual_review_required: true,
+    metadata: {
+      attempts: 1,
+      retries_needed: 0,
+      succeeded_on_first_try: false,
+      attempt_log: [{ attempt: 1, success: false, reason: 'manual review required' }],
+      addressed_adversarial_findings: false,
+      model_attempts: 0,
+      fallback_used: true,
+      fallback_reason: failureReason,
+      fixed_version: intelOutput && intelOutput.fixed_version ? intelOutput.fixed_version : null,
+      fix_commit_url: intelOutput && intelOutput.fix_commit_url ? intelOutput.fix_commit_url : null,
+      target_function: context.targetFunctionName,
+      target_lines: [context.functionStartLine, context.functionEndLine],
+      warnings,
+      suggested_changes: Array.isArray(fixDescription && fixDescription.suggested_changes) ? fixDescription.suggested_changes : []
+    }
+  };
+}
+
+async function generatePatchWithResilience({ analyzerOutput, sourceCode, model, previousAttempt, target, adversarialFindings, intelOutput, progress }) {
+  const context = buildPatchContext(sourceCode, analyzerOutput, intelOutput);
+  const warnings = context.warnings.slice();
+
+  warnings.forEach((warning) => {
+    console.warn(warning);
   });
+
+  const attempts = [
+    {
+      name: 'known-fix-or-focused',
+      timeoutMs: PATCH_TIMEOUT_MS,
+      message: 'Generating patch (estimated 15-30s)...',
+      prepare() {
+        context.selectedContext = context.selectedContext;
+        const prompt = context.intelSummary.fix_diff
+          ? buildKnownFixPrompt({ context, target, adversarialFindings, previousAttempt, mode: context.selectedContext.mode })
+          : buildFocusedPatchPrompt({ context, target, adversarialFindings, previousAttempt, mode: context.selectedContext.mode });
+        return { prompt, toolName: 'patcher' };
+      }
+    },
+    {
+      name: 'function-only',
+      timeoutMs: PATCH_TIMEOUT_MS,
+      message: 'Retrying with reduced context...',
+      prepare() {
+        context.selectedContext = context.functionOnlyContext;
+        const prompt = context.intelSummary.fix_diff
+          ? buildKnownFixPrompt({ context, target, adversarialFindings, previousAttempt, mode: context.selectedContext.mode })
+          : buildFocusedPatchPrompt({ context, target, adversarialFindings, previousAttempt, mode: context.selectedContext.mode });
+        return { prompt, toolName: 'patcher' };
+      }
+    },
+    {
+      name: 'description-only',
+      timeoutMs: PATCH_DESCRIPTION_TIMEOUT_MS,
+      message: 'Retrying with reduced context...',
+      prepare() {
+        context.selectedContext = context.tightLineContext;
+        return { prompt: buildDescriptionOnlyPrompt({ context, target }), toolName: 'patcher-planner' };
+      }
+    }
+  ];
+
+  let lastError = null;
+
+  for (let index = 0; index < attempts.length; index += 1) {
+    const attempt = attempts[index];
+    try {
+      progress.update(attempt.message, 95);
+      const request = attempt.prepare();
+      const result = await callPatchModel({
+        prompt: request.prompt,
+        model,
+        timeoutMs: attempt.timeoutMs,
+        toolName: request.toolName
+      });
+
+      if (attempt.name === 'description-only') {
+        return {
+          result: buildManualReviewResult({
+            target,
+            sourceCode,
+            context,
+            fixDescription: result,
+            failureReason: lastError ? lastError.message : 'Patch model returned description-only guidance.',
+            warnings,
+            intelOutput
+          }),
+          model_attempts: index + 1,
+          fallback_used: true,
+          fallback_reason: lastError ? lastError.message : 'Description-only fallback used',
+          context
+        };
+      }
+
+      const patchedFunction = normalizePatchedFunction(result.patched_function, context);
+      if (!patchedFunction) {
+        throw new Error('Patcher returned empty patched_function.');
+      }
+
+      const patchedCode = replaceFunctionInSource(sourceCode, context, patchedFunction);
+      return {
+        result: {
+          strategies: [
+            {
+              name: context.intelSummary.fix_diff ? 'Known Fix Adaptation' : 'Focused Function Patch',
+              approach: result.approach || 'Patch the vulnerable function using the smallest safe change.',
+              score_breakdown: { minimality: 24, safety: 24, convention_match: 24, side_effect_risk: 23 },
+              score: 95,
+              selected: true
+            }
+          ],
+          selected_strategy: context.intelSummary.fix_diff ? 'Known Fix Adaptation' : 'Focused Function Patch',
+          reasoning: result.reasoning || 'Applied a focused patch to the vulnerable function only.',
+          patch_diff: buildUnifiedDiff(target, context, context.functionText, patchedFunction),
+          patched_code: patchedCode,
+          patched_function: patchedFunction,
+          target_function: context.targetFunctionName,
+          target_lines: [context.functionStartLine, context.functionEndLine],
+          warnings
+        },
+        model_attempts: index + 1,
+        fallback_used: false,
+        fallback_reason: '',
+        context
+      };
+    } catch (error) {
+      lastError = error;
+      if (!isTransientPatchError(error) && attempt.name !== 'description-only') {
+        break;
+      }
+      await delay(800 * (index + 1));
+    }
+  }
+
+  return {
+    result: buildManualReviewResult({
+      target,
+      sourceCode,
+      context,
+      fixDescription: null,
+      failureReason: lastError ? lastError.message : 'Unknown model failure',
+      warnings,
+      intelOutput
+    }),
+    model_attempts: attempts.length,
+    fallback_used: true,
+    fallback_reason: lastError ? lastError.message : 'Unknown model failure',
+    context
+  };
 }
 
 function hasRequiredGuards(sourceCode, target) {
@@ -210,67 +702,121 @@ async function patchTarget(options = {}) {
   const analyzerOutput = options.analyzerOutput || (await readAnalyzerOutput(targetKey));
   const sourceCode = options.sourceCode || (await readSourceCode(targetKey));
   const adversarialFindings = options.adversarialFindings || [];
+  const existingIntel = await readIntelOutput();
+  const intelOutput = options.intelOutput || (existingIntel && existingIntel.package === target.packageName
+    ? existingIntel
+    : await gatherVulnerabilityIntel({ targetKey }));
 
+  const progress = startProgressHeartbeat(target, 'Extracting vulnerable code section...', 94);
   let previousAttempt = null;
   const attemptLog = [];
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    const patchResult = await generatePatch({ analyzerOutput, sourceCode, model, previousAttempt, target, adversarialFindings });
-    const patchedCode = patchResult.patched_code || '';
-    if (!patchedCode.trim()) {
-      const error = new Error('Patcher returned empty patched_code.');
-      error.attempts = attempt;
-      throw error;
-    }
+  try {
+    progress.update('Extracting vulnerable code section...', 94);
+    progress.update('Querying known fix from intelligence data...', 95);
 
-    const strategies = normalizeStrategies(patchResult.strategies, patchResult.selected_strategy);
-    const selectedStrategy = strategies.find((strategy) => strategy.selected) || strategies[0];
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const patchGeneration = await generatePatchWithResilience({
+        analyzerOutput,
+        sourceCode,
+        model,
+        previousAttempt,
+        target,
+        adversarialFindings,
+        intelOutput,
+        progress
+      });
 
-    if (!hasRequiredGuards(patchedCode, target)) {
-      attemptLog.push({ attempt, success: false, reason: 'missing target-specific guards' });
+      const patchResult = patchGeneration.result;
+      const patchedCode = patchResult.patched_code || '';
+
+      if (patchResult.manual_review_required) {
+        await writePatchedPackage(targetKey, patchedCode || sourceCode);
+        return {
+          ...patchResult,
+          metadata: {
+            ...patchResult.metadata,
+            attempts: attempt,
+            retries_needed: attempt - 1,
+            model_attempts: patchGeneration.model_attempts,
+            fallback_used: patchGeneration.fallback_used,
+            fallback_reason: patchGeneration.fallback_reason,
+            addressed_adversarial_findings: adversarialFindings.length > 0
+          }
+        };
+      }
+
+      if (!patchedCode.trim()) {
+        const error = new Error('Patcher returned empty patched_code.');
+        error.attempts = attempt;
+        throw error;
+      }
+
+      const strategies = normalizeStrategies(patchResult.strategies, patchResult.selected_strategy);
+      const selectedStrategy = strategies.find((strategy) => strategy.selected) || strategies[0];
+
+      if (!hasRequiredGuards(patchedCode, target)) {
+        attemptLog.push({ attempt, success: false, reason: 'missing target-specific guards' });
+        previousAttempt = {
+          exploitOutput: target.vulnerableClass === 'Prototype Pollution'
+            ? 'Rejected patch: missing one or more required key guards (__proto__, constructor, prototype).'
+            : 'Rejected patch: generated code did not satisfy target-specific validation.',
+          normalTestOutput: ''
+        };
+        progress.update('Retrying with reduced context...', 96);
+        continue;
+      }
+
+      await writePatchedPackage(targetKey, patchedCode);
+      const validation = await validatePatchedPackage(targetKey);
+
+      if (validation.exploitPassed && validation.normalTestsPassed) {
+        return {
+          target: target.key,
+          package_name: target.packageName,
+          cve: target.cve,
+          strategies,
+          selected_strategy: selectedStrategy.name,
+          reasoning: patchResult.reasoning || 'Selected for highest combined score and validation success.',
+          patch_diff: patchResult.patch_diff,
+          patched_code: patchedCode,
+          patched_function: patchResult.patched_function || '',
+          target_function: patchResult.target_function || 'unknown',
+          target_lines: patchResult.target_lines || [],
+          applied_known_fix_pattern: Boolean(intelOutput && intelOutput.fix_diff),
+          metadata: {
+            attempts: attempt,
+            retries_needed: attempt - 1,
+            succeeded_on_first_try: attempt === 1,
+            attempt_log: attemptLog.concat({ attempt, success: true, reason: 'validation passed' }),
+            addressed_adversarial_findings: adversarialFindings.length > 0,
+            model_attempts: patchGeneration.model_attempts,
+            fallback_used: patchGeneration.fallback_used,
+            fallback_reason: patchGeneration.fallback_reason,
+            fixed_version: intelOutput && intelOutput.fixed_version ? intelOutput.fixed_version : null,
+            fix_commit_url: intelOutput && intelOutput.fix_commit_url ? intelOutput.fix_commit_url : null,
+            context_mode: patchGeneration.context && patchGeneration.context.selectedContext ? patchGeneration.context.selectedContext.mode : 'unknown',
+            warnings: patchResult.warnings || []
+          }
+        };
+      }
+
+      attemptLog.push({
+        attempt,
+        success: false,
+        reason: 'validation failed',
+        fallback_used: patchGeneration.fallback_used,
+        exploit_output: validation.exploitOutput,
+        normal_test_output: validation.normalTestOutput
+      });
       previousAttempt = {
-        exploitOutput: target.vulnerableClass === 'Prototype Pollution'
-          ? 'Rejected patch: missing one or more required key guards (__proto__, constructor, prototype).'
-          : 'Rejected patch: generated code did not satisfy target-specific validation.',
-        normalTestOutput: ''
+        exploitOutput: validation.exploitOutput,
+        normalTestOutput: validation.normalTestOutput
       };
-      continue;
+      progress.update('Retrying with reduced context...', 96);
     }
-
-    await writePatchedPackage(targetKey, patchedCode);
-    const validation = await validatePatchedPackage(targetKey);
-
-    if (validation.exploitPassed && validation.normalTestsPassed) {
-      return {
-        target: target.key,
-        package_name: target.packageName,
-        cve: target.cve,
-        strategies,
-        selected_strategy: selectedStrategy.name,
-        reasoning: patchResult.reasoning || 'Selected for highest combined score and validation success.',
-        patch_diff: patchResult.patch_diff,
-        patched_code: patchedCode,
-        metadata: {
-          attempts: attempt,
-          retries_needed: attempt - 1,
-          succeeded_on_first_try: attempt === 1,
-          attempt_log: attemptLog.concat({ attempt, success: true, reason: 'validation passed' }),
-          addressed_adversarial_findings: adversarialFindings.length > 0
-        }
-      };
-    }
-
-    attemptLog.push({
-      attempt,
-      success: false,
-      reason: 'validation failed',
-      exploit_output: validation.exploitOutput,
-      normal_test_output: validation.normalTestOutput
-    });
-    previousAttempt = {
-      exploitOutput: validation.exploitOutput,
-      normalTestOutput: validation.normalTestOutput
-    };
+  } finally {
+    progress.stop();
   }
 
   const error = new Error('Failed to generate a valid patch after 2 attempts.');
@@ -297,9 +843,10 @@ if (require.main === module) {
 module.exports = {
   patchTarget,
   patchMixinDeep: patchTarget,
-  buildPatchPrompt,
   hasRequiredGuards,
   validatePatchedPackage,
+  generatePatchWithResilience,
+  buildPatchContext,
   PATCH_OUTPUT_PATH,
   PATCHED_PACKAGE_DIR
 };

@@ -1,4 +1,4 @@
-ï»¿(async function bootstrap() {
+(async function bootstrap() {
   await loadTarget('mixin-deep');
 })().catch((error) => {
   console.error(error);
@@ -243,6 +243,15 @@ function syncIntakeMode() {
 }
 
 function startProtocol(state, data) {
+  stopPreparationPolling();
+  const existing = document.getElementById('terminal-stream');
+  if (existing) existing.innerHTML = '';
+  const orb = document.querySelector('.console-orb');
+  if (orb) {
+    orb.classList.remove('is-complete');
+    orb.classList.add('is-running');
+  }
+
   showScreen('screen-live');
   setText('top-status', `Running protocol for ${state.repo}`);
   setText('protocol-target', `${state.repo} - ${state.cve}`);
@@ -252,22 +261,19 @@ function startProtocol(state, data) {
   const artifactTitle = document.getElementById('artifact-title');
   const progressFill = document.getElementById('progress-fill');
   const miniStats = document.getElementById('mini-stats');
-  const orb = document.querySelector('.console-orb');
 
   window.__artifactAnimationToken = 0;
-  feed.innerHTML = '';
+  if (feed) {
+    feed.innerHTML = '';
+    feed.classList.add('is-running');
+    feed.classList.remove('is-complete');
+  }
   artifactPreview.textContent = '';
   artifactPreview.classList.remove('is-visible');
   miniStats.innerHTML = '';
-  feed.classList.add('is-running');
-  feed.classList.remove('is-complete');
   progressFill.style.width = '0%';
   progressFill.classList.add('is-running');
   progressFill.classList.remove('is-complete');
-  if (orb) {
-    orb.classList.add('is-running');
-    orb.classList.remove('is-complete');
-  }
 
   const steps = buildProtocolSteps(state, data);
   const stageNodes = Array.from(document.querySelectorAll('.live-stage'));
@@ -280,10 +286,16 @@ function startProtocol(state, data) {
     node.dataset.agent = steps[index]?.agent || '';
   });
 
+  startLiveFeedback({
+    startedAt: new Date().toISOString(),
+    messages: buildProtocolRotatorMessages(steps[0])
+  });
+
   let delay = 0;
   steps.forEach((step, index) => {
     setTimeout(() => {
       updateStageNodes(stageNodes, index, pipelineNodes, step.agent);
+      updateLiveFeedback({ messages: buildProtocolRotatorMessages(step), loading: true });
       setText('live-title', step.title);
       setText('progress-status', step.status);
       progressFill.style.width = `${((index + 1) / steps.length) * 100}%`;
@@ -295,6 +307,7 @@ function startProtocol(state, data) {
 
       if (index === steps.length - 1) {
         setTimeout(() => {
+          stopLiveFeedback('Remediation complete. Packaging operator outputs...');
           feed.classList.remove('is-running');
           feed.classList.add('is-complete');
           progressFill.classList.remove('is-running');
@@ -583,25 +596,40 @@ function appendTerminalLine(text, tone, feed) {
   line.className = `terminal-line ${tone}`;
   line.textContent = text;
   feed.appendChild(line);
-  feed.scrollTop = feed.scrollHeight;
+  requestAnimationFrame(() => {
+    line.classList.add('is-visible');
+    feed.scrollTop = feed.scrollHeight;
+  });
 }
 
-function updateStageNodes(nodes, activeIndex) {
+function updateStageNodes(nodes, activeIndex, pipelineNodes, activeAgent) {
   nodes.forEach((node, index) => {
     node.classList.remove('is-active', 'is-complete');
-    if (index < activeIndex) node.classList.add('is-complete');
-    else if (index === activeIndex) node.classList.add('is-active');
+    if (index < activeIndex) {
+      node.classList.add('is-complete');
+      formatStepTime(node);
+    } else if (index === activeIndex) {
+      node.classList.add('is-active');
+      const time = node.querySelector('.live-stage-time');
+      if (time) time.textContent = '';
+    } else {
+      const time = node.querySelector('.live-stage-time');
+      if (time) time.textContent = '';
+    }
   });
+  if (pipelineNodes) updatePipelineViz(activeIndex);
+  setOrbAgent(activeAgent);
 }
 
 function renderMiniStats(items) {
   const container = document.getElementById('mini-stats');
   container.innerHTML = '';
-  items.forEach((item) => {
+  items.forEach((item, index) => {
     const row = document.createElement('div');
     row.className = 'mini-stat';
-    row.textContent = item;
+    row.style.animationDelay = `${index * 80}ms`;
     container.appendChild(row);
+    countNumberInNode(row, item);
   });
 }
 
@@ -1073,3 +1101,582 @@ function setText(id, value) {
   const element = document.getElementById(id);
   if (element) element.textContent = value || '';
 }
+
+function stopPreparationPolling() {
+  if (window.__preparePollTimer) {
+    clearInterval(window.__preparePollTimer);
+    window.__preparePollTimer = null;
+  }
+}
+
+function formatElapsed(ms) {
+  const totalMs = Math.max(0, Number(ms || 0));
+  const minutes = Math.floor(totalMs / 60000);
+  const seconds = Math.floor((totalMs % 60000) / 1000);
+  const tenths = Math.floor((totalMs % 1000) / 100);
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${tenths}s`;
+}
+
+function setLoadingState(isActive) {
+  const status = document.getElementById('progress-status');
+  const spinner = document.getElementById('live-spinner');
+  if (status) status.classList.toggle('loading-dots', Boolean(isActive));
+  if (spinner) spinner.classList.toggle('is-active', Boolean(isActive));
+}
+
+function updateLiveTimer(startedAt) {
+  const timer = document.getElementById('live-timer');
+  if (!timer) return;
+  const started = startedAt ? new Date(startedAt).getTime() : Date.now();
+  timer.textContent = `Elapsed: ${formatElapsed(Date.now() - started)}`;
+}
+
+function animateRotatorMessage(message) {
+  const rotator = document.getElementById('live-rotator');
+  if (!rotator) return;
+  rotator.classList.remove('is-entering');
+  rotator.textContent = message || 'Still working...';
+  void rotator.offsetWidth;
+  rotator.classList.add('is-entering');
+}
+
+function startLiveFeedback(options = {}) {
+  const messages = Array.isArray(options.messages) && options.messages.length > 0
+    ? options.messages
+    : ['Still working - preparing the pipeline...'];
+  const startedAt = options.startedAt || new Date().toISOString();
+  stopLiveFeedback();
+  window.__liveFeedback = {
+    startedAt,
+    messages,
+    index: 0,
+    timerId: window.setInterval(() => updateLiveTimer(window.__liveFeedback && window.__liveFeedback.startedAt), 100),
+    rotateId: window.setInterval(() => {
+      if (!window.__liveFeedback) return;
+      window.__liveFeedback.index = (window.__liveFeedback.index + 1) % window.__liveFeedback.messages.length;
+      animateRotatorMessage(window.__liveFeedback.messages[window.__liveFeedback.index]);
+    }, 3000)
+  };
+  updateLiveTimer(startedAt);
+  animateRotatorMessage(messages[0]);
+  setLoadingState(true);
+}
+
+function updateLiveFeedback(options = {}) {
+  if (!window.__liveFeedback) {
+    startLiveFeedback(options);
+    return;
+  }
+  if (options.startedAt) {
+    window.__liveFeedback.startedAt = options.startedAt;
+    updateLiveTimer(options.startedAt);
+  }
+  if (Array.isArray(options.messages) && options.messages.length > 0) {
+    window.__liveFeedback.messages = options.messages;
+    window.__liveFeedback.index = 0;
+    animateRotatorMessage(options.messages[0]);
+  }
+  if (typeof options.loading === 'boolean') {
+    setLoadingState(options.loading);
+  }
+}
+
+function stopLiveFeedback(finalMessage) {
+  if (window.__liveFeedback && window.__liveFeedback.timerId) clearInterval(window.__liveFeedback.timerId);
+  if (window.__liveFeedback && window.__liveFeedback.rotateId) clearInterval(window.__liveFeedback.rotateId);
+  if (finalMessage) animateRotatorMessage(finalMessage);
+  window.__liveFeedback = null;
+  setLoadingState(false);
+}
+
+function buildPreparationRotatorMessages(status) {
+  const phase = String((status && status.phase) || 'queued');
+  const packageName = status && status.packageName ? status.packageName : 'package';
+  return [
+    'Cloning repository...',
+    'Analyzing codebase structure...',
+    'Mapping dependency graph...',
+    'Scanning for vulnerability patterns...',
+    'This may take 30-60 seconds for large packages...',
+    `Still working - ${packageName} is a large codebase...`,
+    `Current phase: ${phase.replace(/-/g, ' ')}...`
+  ];
+}
+
+function buildProtocolRotatorMessages(step) {
+  const title = step && step.title ? step.title : 'Executing remediation pipeline';
+  const status = step && step.status ? step.status : 'Processing live remediation';
+  return [
+    title,
+    status,
+    'Analyzing codebase structure...',
+    'Scanning for vulnerability patterns...',
+    'Generating and validating remediation strategy...',
+    'Still working - complex package analysis in progress...'
+  ];
+}
+
+function formatEtaFromStatus(status) {
+  if (!status || status.status === 'complete' || status.status === 'error') return status && status.status === 'complete' ? 'ETA 0s' : 'ETA unavailable';
+  const progress = Number(status.progress || 0);
+  const startedAt = status.startedAt ? new Date(status.startedAt).getTime() : Date.now();
+  const elapsedMs = Math.max(1000, Date.now() - startedAt);
+  if (!progress || progress >= 100) return 'Estimating time left...';
+  const remainingMs = elapsedMs * ((100 - progress) / progress);
+  const remainingSeconds = Math.max(1, Math.round(remainingMs / 1000));
+  if (remainingSeconds < 60) return `ETA ${remainingSeconds}s`;
+  return `ETA ${Math.ceil(remainingSeconds / 60)}m`;
+}
+
+function mapPreparationPhaseToStageIndex(phase) {
+  switch (phase) {
+    case 'queued':
+    case 'parsed':
+    case 'metadata':
+    case 'advisory':
+    case 'download':
+    case 'extract':
+    case 'install':
+    case 'source':
+    case 'target':
+    case 'classify':
+    case 'harness':
+      return 0;
+    case 'remediate':
+      return 1;
+    case 'adversarial':
+      return 4;
+    case 'eval':
+    case 'ready':
+      return 5;
+    default:
+      return 0;
+  }
+}
+
+function updatePreparationUI(status) {
+  const safeStatus = status || { status: 'running', phase: 'queued', progress: 6, message: 'Preparing custom target...' };
+  const progress = Math.max(6, Math.min(100, Number(safeStatus.progress || 0)));
+  const progressFill = document.getElementById('progress-fill');
+  const artifactTitle = document.getElementById('artifact-title');
+  const artifactPreview = document.getElementById('artifact-preview');
+  const stageNodes = Array.from(document.querySelectorAll('.live-stage'));
+  const pipelineNodes = Array.from(document.querySelectorAll('.pipeline-node'));
+  const orb = document.querySelector('.console-orb');
+  const packageName = safeStatus.packageName || window.__pendingCustomInput || 'custom package';
+  const percentText = `${progress}% complete`;
+  const etaText = formatEtaFromStatus(safeStatus);
+  const statusText = safeStatus.message || 'Preparing custom target...';
+  const stalled = Boolean(window.__lastPreparationUpdatedAt && safeStatus.updatedAt && window.__lastPreparationUpdatedAt === safeStatus.updatedAt);
+
+  setText('top-status', `Preparing ${packageName} · ${percentText}`);
+  setText('protocol-target', `${packageName}${safeStatus.cve ? ` - ${safeStatus.cve}` : ''}`);
+  setText('live-title', safeStatus.status === 'error' ? 'Preparation failed' : safeStatus.status === 'complete' ? 'Preparation complete' : 'Preparing target package');
+  setText('progress-status', statusText);
+
+  updateLiveFeedback({
+    startedAt: safeStatus.startedAt || window.__prepareStartedAt,
+    messages: buildPreparationRotatorMessages(safeStatus),
+    loading: safeStatus.status === 'running'
+  });
+
+  if (progressFill) {
+    progressFill.style.width = `${progress}%`;
+    progressFill.classList.toggle('is-complete', safeStatus.status === 'complete');
+    progressFill.classList.toggle('is-running', safeStatus.status !== 'complete');
+  }
+
+  if (artifactTitle) artifactTitle.textContent = safeStatus.status === 'error' ? 'Preparation error' : safeStatus.status === 'complete' ? 'Target ready' : 'Preparation status';
+  if (artifactPreview) {
+    artifactPreview.textContent = safeStatus.status === 'error'
+      ? `${statusText}\n\nThe dashboard could not read a valid preparation status update from the backend. If this persists, restart the run and check the latest server/pipeline error.`
+      : `${statusText}\n\n${percentText}\n${etaText}`;
+    artifactPreview.classList.add('is-visible');
+  }
+
+  renderMiniStats([
+    percentText,
+    safeStatus.status === 'error' ? 'Run blocked' : etaText,
+    `Phase: ${String(safeStatus.phase || 'queued').replace(/-/g, ' ')}`,
+    stalled && safeStatus.status === 'running' ? 'Waiting on next backend milestone' : 'Backend connected'
+  ]);
+
+  if (orb) {
+    orb.classList.toggle('is-complete', safeStatus.status === 'complete');
+    orb.classList.toggle('is-running', safeStatus.status !== 'complete');
+    orb.dataset.agent = safeStatus.phase === 'adversarial' ? 'adversary' : safeStatus.phase === 'remediate' ? 'spotter' : 'scout';
+  }
+
+  const activeIndex = mapPreparationPhaseToStageIndex(safeStatus.phase);
+  updateStageNodes(stageNodes, activeIndex, pipelineNodes, orb ? orb.dataset.agent : 'scout');
+
+  if (safeStatus.status === 'complete') {
+    stopLiveFeedback('Target prepared. Handing off to remediation agents...');
+  } else if (safeStatus.status === 'error') {
+    stopLiveFeedback('Preparation paused. Review the latest error details.');
+  }
+
+  window.__lastPreparationUpdatedAt = safeStatus.updatedAt || '';
+}
+
+async function fetchPreparationStatus() {
+  const response = await fetch('/api/prepare-status');
+  if (!response.ok) throw new Error(`Preparation status failed (${response.status})`);
+  return response.json();
+}
+
+function startPreparationPolling() {
+  stopPreparationPolling();
+  window.__lastPreparationPhase = '';
+  const tick = async () => {
+    try {
+      const status = await fetchPreparationStatus();
+      updatePreparationUI(status);
+      if (status && (status.status === 'complete' || status.status === 'error')) {
+        stopPreparationPolling();
+      }
+    } catch (_) {
+      // Keep the last visible UI state if polling fails momentarily.
+    }
+  };
+  tick();
+  window.__preparePollTimer = setInterval(tick, 900);
+}
+
+async function prepareCustomTarget(input, cve) {
+  startPreparationPolling();
+  const response = await fetch('/api/prepare-target', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input, cve })
+  });
+
+  if (!response.ok) {
+    stopPreparationPolling();
+    throw new Error(`Custom target preparation failed (${response.status})`);
+  }
+  return response.json();
+}
+
+function showPreparingState(repoValue, cveValue) {
+  window.__pendingCustomInput = repoValue || 'custom package';
+  showScreen('screen-live');
+  setText('top-status', `Preparing ${repoValue || 'custom package'} Â· 0% complete`);
+  setText('protocol-target', `${repoValue || 'Custom package'}${cveValue ? ` - ${cveValue}` : ''}`);
+  setText('live-title', 'Preparing target package');
+  setText('progress-status', 'Submitting custom target intake');
+
+  const feed = document.getElementById('terminal-stream');
+  const artifactPreview = document.getElementById('artifact-preview');
+  const artifactTitle = document.getElementById('artifact-title');
+  const progressFill = document.getElementById('progress-fill');
+  const orb = document.querySelector('.console-orb');
+  const stageNodes = Array.from(document.querySelectorAll('.live-stage'));
+  const pipelineNodes = Array.from(document.querySelectorAll('.pipeline-node'));
+
+  if (feed) {
+    feed.innerHTML = '';
+    feed.classList.add('is-running');
+    feed.classList.remove('is-complete');
+    appendTerminalLine(`[Intake] Accepted ${repoValue || 'custom package'} for live remediation`, 'accent', feed);
+  }
+
+  if (artifactTitle) artifactTitle.textContent = 'Preparation status';
+  if (artifactPreview) {
+    artifactPreview.textContent = 'Connecting intake to the backend pipeline...';
+    artifactPreview.classList.add('is-visible');
+  }
+
+  if (progressFill) {
+    progressFill.style.width = '6%';
+    progressFill.classList.add('is-running');
+    progressFill.classList.remove('is-complete');
+  }
+
+  if (orb) {
+    orb.classList.add('is-running');
+    orb.classList.remove('is-complete');
+    orb.dataset.agent = 'scout';
+  }
+
+  stageNodes.forEach((node, index) => {
+    node.classList.toggle('is-active', index === 0);
+    node.classList.remove('is-complete');
+  });
+  pipelineNodes.forEach((node, index) => {
+    node.classList.toggle('is-active', index === 0);
+    node.classList.remove('is-complete');
+  });
+
+  renderMiniStats(['6% complete', 'Estimating time left...', 'Phase: intake']);
+  startPreparationPolling();
+}
+
+function startProtocol(state, data) {
+  stopPreparationPolling();
+  const existing = document.getElementById('terminal-stream');
+  if (existing) existing.innerHTML = '';
+  const orb = document.querySelector('.console-orb');
+  if (orb) {
+    orb.classList.remove('is-complete');
+    orb.classList.add('is-running');
+  }
+
+  showScreen('screen-live');
+  setText('top-status', `Running protocol for ${state.repo}`);
+  setText('protocol-target', `${state.repo} - ${state.cve}`);
+
+  const feed = document.getElementById('terminal-stream');
+  const artifactPreview = document.getElementById('artifact-preview');
+  const artifactTitle = document.getElementById('artifact-title');
+  const progressFill = document.getElementById('progress-fill');
+  const miniStats = document.getElementById('mini-stats');
+
+  window.__artifactAnimationToken = 0;
+  if (feed) {
+    feed.innerHTML = '';
+    feed.classList.add('is-running');
+    feed.classList.remove('is-complete');
+  }
+  artifactPreview.textContent = '';
+  artifactPreview.classList.remove('is-visible');
+  miniStats.innerHTML = '';
+  progressFill.style.width = '0%';
+  progressFill.classList.add('is-running');
+  progressFill.classList.remove('is-complete');
+
+  const steps = buildProtocolSteps(state, data);
+  const stageNodes = Array.from(document.querySelectorAll('.live-stage'));
+  const pipelineNodes = Array.from(document.querySelectorAll('.pipeline-node'));
+  stageNodes.forEach((node, index) => {
+    node.dataset.duration = String(Math.round((steps[index]?.delay || 0) / 1000 * 10) / 10);
+    node.dataset.agent = steps[index]?.agent || '';
+  });
+  pipelineNodes.forEach((node, index) => {
+    node.dataset.agent = steps[index]?.agent || '';
+  });
+
+  startLiveFeedback({
+    startedAt: new Date().toISOString(),
+    messages: buildProtocolRotatorMessages(steps[0])
+  });
+
+  let delay = 0;
+  steps.forEach((step, index) => {
+    setTimeout(() => {
+      updateStageNodes(stageNodes, index, pipelineNodes, step.agent);
+      updateLiveFeedback({ messages: buildProtocolRotatorMessages(step), loading: true });
+      setText('live-title', step.title);
+      setText('progress-status', step.status);
+      progressFill.style.width = `${((index + 1) / steps.length) * 100}%`;
+      appendTerminalLine(step.line, step.tone || 'dim', feed);
+      artifactTitle.textContent = step.artifactTitle;
+      animateArtifactPreview(artifactPreview, step.artifact);
+      renderMiniStats(step.miniStats);
+      setOrbAgent(step.agent);
+
+      if (index === steps.length - 1) {
+        setTimeout(() => {
+          stopLiveFeedback('Remediation complete. Packaging operator outputs...');
+          feed.classList.remove('is-running');
+          feed.classList.add('is-complete');
+          progressFill.classList.remove('is-running');
+          progressFill.classList.add('is-complete');
+          if (orb) {
+            orb.classList.remove('is-running');
+            orb.classList.add('is-complete');
+          }
+          populateResults(state, data);
+          renderBaseballStats(data.baseballCard);
+          renderMetricsDashboard(data);
+          renderEvalSummary(data.eval);
+          renderScoutSection(data.scout);
+          renderAdversarialSection(data.adversarial);
+          renderStrategyMatrix(data.striker);
+          renderTextSummary(data);
+          setResultsView('dashboard');
+          showScreen('screen-results');
+          setText('top-status', `Protocol completed for ${state.repo}`);
+        }, 700);
+      }
+    }, delay);
+
+    delay += step.delay;
+  });
+}
+
+function showPreparationError(message) {
+  stopPreparationPolling();
+  updatePreparationUI({
+    status: 'error',
+    phase: 'failed',
+    progress: 100,
+    packageName: window.__pendingCustomInput || 'custom package',
+    cve: document.getElementById('cve-input')?.value?.trim() || '',
+    message: message || 'Custom target preparation failed.',
+    updatedAt: new Date().toISOString(),
+    startedAt: window.__prepareStartedAt || new Date().toISOString(),
+    error: message || 'Custom target preparation failed.'
+  });
+}
+
+function updatePreparationUI(status) {
+  const safeStatus = status || { status: 'running', phase: 'queued', progress: 6, message: 'Preparing custom target...' };
+  const progress = Math.max(6, Math.min(100, Number(safeStatus.progress || 0)));
+  const progressFill = document.getElementById('progress-fill');
+  const artifactTitle = document.getElementById('artifact-title');
+  const artifactPreview = document.getElementById('artifact-preview');
+  const stageNodes = Array.from(document.querySelectorAll('.live-stage'));
+  const pipelineNodes = Array.from(document.querySelectorAll('.pipeline-node'));
+  const orb = document.querySelector('.console-orb');
+  const packageName = safeStatus.packageName || window.__pendingCustomInput || 'custom package';
+  const percentText = `${progress}% complete`;
+  const etaText = formatEtaFromStatus(safeStatus);
+  const statusText = safeStatus.message || 'Preparing custom target...';
+  const stalled = Boolean(window.__lastPreparationUpdatedAt && safeStatus.updatedAt && window.__lastPreparationUpdatedAt === safeStatus.updatedAt);
+
+  setText('top-status', `Preparing ${packageName} · ${percentText}`);
+  setText('protocol-target', `${packageName}${safeStatus.cve ? ` - ${safeStatus.cve}` : ''}`);
+  setText('live-title', safeStatus.status === 'error' ? 'Preparation failed' : safeStatus.status === 'complete' ? 'Preparation complete' : 'Preparing target package');
+  setText('progress-status', statusText);
+
+  updateLiveFeedback({
+    startedAt: safeStatus.startedAt || window.__prepareStartedAt,
+    messages: buildPreparationRotatorMessages(safeStatus),
+    loading: safeStatus.status === 'running'
+  });
+
+  if (progressFill) {
+    progressFill.style.width = `${progress}%`;
+    progressFill.classList.toggle('is-complete', safeStatus.status === 'complete');
+    progressFill.classList.toggle('is-running', safeStatus.status !== 'complete');
+  }
+
+  if (artifactTitle) artifactTitle.textContent = safeStatus.status === 'error' ? 'Preparation error' : safeStatus.status === 'complete' ? 'Target ready' : 'Preparation status';
+  if (artifactPreview) {
+    artifactPreview.textContent = safeStatus.status === 'error'
+      ? `${statusText}\n\nThe dashboard could not read a valid preparation status update from the backend. If this persists, restart the run and check the latest server/pipeline error.`
+      : `${statusText}\n\n${percentText}\n${etaText}`;
+    artifactPreview.classList.add('is-visible');
+  }
+
+  renderMiniStats([
+    percentText,
+    safeStatus.status === 'error' ? 'Run blocked' : etaText,
+    `Phase: ${String(safeStatus.phase || 'queued').replace(/-/g, ' ')}`,
+    stalled && safeStatus.status === 'running' ? 'Waiting on next backend milestone' : 'Backend connected'
+  ]);
+
+  if (orb) {
+    orb.classList.toggle('is-complete', safeStatus.status === 'complete');
+    orb.classList.toggle('is-running', safeStatus.status !== 'complete');
+    orb.dataset.agent = safeStatus.phase === 'adversarial' ? 'adversary' : safeStatus.phase === 'remediate' ? 'spotter' : 'scout';
+  }
+
+  const activeIndex = mapPreparationPhaseToStageIndex(safeStatus.phase);
+  updateStageNodes(stageNodes, activeIndex, pipelineNodes, orb ? orb.dataset.agent : 'scout');
+
+  if (safeStatus.status === 'complete') {
+    stopLiveFeedback('Target prepared. Handing off to remediation agents...');
+  } else if (safeStatus.status === 'error') {
+    stopLiveFeedback('Preparation paused. Review the latest error details.');
+  }
+
+  window.__lastPreparationUpdatedAt = safeStatus.updatedAt || '';
+}
+
+function startPreparationPolling() {
+  stopPreparationPolling();
+  window.__lastPreparationPhase = '';
+  window.__lastPreparationUpdatedAt = '';
+  const tick = async () => {
+    try {
+      const status = await fetchPreparationStatus();
+      updatePreparationUI(status);
+      if (status && (status.status === 'complete' || status.status === 'error')) {
+        stopPreparationPolling();
+      }
+    } catch (error) {
+      showPreparationError(error.message || 'Could not read preparation status from the backend.');
+    }
+  };
+  tick();
+  window.__preparePollTimer = setInterval(tick, 900);
+}
+
+async function prepareCustomTarget(input, cve) {
+  startPreparationPolling();
+  try {
+    const response = await fetch('/api/prepare-target', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input, cve })
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Custom target preparation failed (${response.status})`);
+    }
+
+    return response.json();
+  } catch (error) {
+    showPreparationError(error.message || 'Custom target preparation failed.');
+    throw error;
+  }
+}
+
+function showPreparingState(repoValue, cveValue) {
+  window.__pendingCustomInput = repoValue || 'custom package';
+  window.__prepareStartedAt = new Date().toISOString();
+  showScreen('screen-live');
+  setText('top-status', `Preparing ${repoValue || 'custom package'} · 0% complete`);
+  setText('protocol-target', `${repoValue || 'Custom package'}${cveValue ? ` - ${cveValue}` : ''}`);
+  setText('live-title', 'Preparing target package');
+  setText('progress-status', 'Preparing custom target intake');
+
+  const artifactPreview = document.getElementById('artifact-preview');
+  const artifactTitle = document.getElementById('artifact-title');
+  const progressFill = document.getElementById('progress-fill');
+  const orb = document.querySelector('.console-orb');
+  const stageNodes = Array.from(document.querySelectorAll('.live-stage'));
+  const pipelineNodes = Array.from(document.querySelectorAll('.pipeline-node'));
+
+  if (artifactTitle) artifactTitle.textContent = 'Preparation status';
+  if (artifactPreview) {
+    artifactPreview.textContent = 'Connecting intake to the backend pipeline...';
+    artifactPreview.classList.add('is-visible');
+  }
+
+  if (progressFill) {
+    progressFill.style.width = '6%';
+    progressFill.classList.add('is-running');
+    progressFill.classList.remove('is-complete');
+  }
+
+  if (orb) {
+    orb.classList.add('is-running');
+    orb.classList.remove('is-complete');
+    orb.dataset.agent = 'scout';
+  }
+
+  stageNodes.forEach((node, index) => {
+    node.classList.toggle('is-active', index === 0);
+    node.classList.remove('is-complete');
+  });
+  pipelineNodes.forEach((node, index) => {
+    node.classList.toggle('is-active', index === 0);
+    node.classList.remove('is-complete');
+  });
+
+  renderMiniStats(['6% complete', 'Estimating time left...', 'Phase: intake', 'Backend connected']);
+  startLiveFeedback({
+    startedAt: window.__prepareStartedAt,
+    messages: buildPreparationRotatorMessages({ packageName: window.__pendingCustomInput, phase: 'queued' })
+  });
+  startPreparationPolling();
+}
+
+
+
+
+

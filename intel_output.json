@@ -1,0 +1,69 @@
+{
+  "cve": "CVE-2020-8203",
+  "package": "lodash",
+  "summary": "",
+  "details": "Prototype pollution attack when using _.zipObjectDeep in lodash before 4.17.20.",
+  "severity": {
+    "score": 3.1,
+    "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:H/A:H"
+  },
+  "cwe": "CWE-770",
+  "cwe_name": "CWE-770",
+  "vulnerable_versions": "4.17.23",
+  "fixed_version": "f2e7063ee409ff40a60b14370c58dceee1a2efd4",
+  "fix_commit_url": null,
+  "fix_pr_url": null,
+  "compare_url": null,
+  "fix_diff": "",
+  "compare_diff": "",
+  "fix_files_changed": [],
+  "fix_lines_changed": 0,
+  "references": [
+    "https://security.netapp.com/advisory/ntap-20200724-0006/",
+    "https://github.com/lodash/lodash/issues/4874",
+    "https://www.oracle.com//security-alerts/cpujul2021.html",
+    "https://www.oracle.com/security-alerts/cpuApr2021.html",
+    "https://www.oracle.com/security-alerts/cpuapr2022.html",
+    "https://www.oracle.com/security-alerts/cpujan2022.html",
+    "https://www.oracle.com/security-alerts/cpuoct2021.html",
+    "https://hackerone.com/reports/712065",
+    "https://github.com/lodash/lodash/issues/4874",
+    "https://hackerone.com/reports/712065",
+    "https://security.netapp.com/advisory/ntap-20200724-0006/",
+    "https://www.oracle.com//security-alerts/cpujul2021.html",
+    "https://www.oracle.com/security-alerts/cpuApr2021.html",
+    "https://www.oracle.com/security-alerts/cpuapr2022.html",
+    "https://www.oracle.com/security-alerts/cpujan2022.html",
+    "https://www.oracle.com/security-alerts/cpuoct2021.html",
+    "https://github.com/lodash/lodash/issues/4874",
+    "https://hackerone.com/reports/712065",
+    "https://security.netapp.com/advisory/ntap-20200724-0006/",
+    "https://www.oracle.com//security-alerts/cpujul2021.html",
+    "https://www.oracle.com/security-alerts/cpuApr2021.html",
+    "https://www.oracle.com/security-alerts/cpuapr2022.html",
+    "https://www.oracle.com/security-alerts/cpujan2022.html",
+    "https://www.oracle.com/security-alerts/cpuoct2021.html"
+  ],
+  "nvd_description": "Prototype pollution attack when using _.zipObjectDeep in lodash before 4.17.20.",
+  "osv_ranges": {
+    "introduced": [
+      "0",
+      "0",
+      "0",
+      "0"
+    ],
+    "fixed": [
+      "f2e7063ee409ff40a60b14370c58dceee1a2efd4"
+    ],
+    "ecosystemSpecific": []
+  },
+  "osv_ecosystem_specific": [],
+  "data_sources": [
+    "osv.dev",
+    "nvd"
+  ],
+  "notes": [
+    "no known fix commit"
+  ],
+  "errors": []
+}

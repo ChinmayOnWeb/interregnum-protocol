@@ -1,18 +1,240 @@
 {
-  "target": "request",
-  "package_name": "request",
-  "cve": "CVE-2023-28155",
+  "signature": "d007c4744731f88aaf0c1e00707f3fd44ef09101",
+  "target": "custom",
+  "package_name": "lodash",
+  "cve": "CVE-2021-23337",
+  "classifier_mode": "model",
+  "files_analyzed": [
+    "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js"
+  ],
   "findings": [
     {
-      "vulnerability_class": "Insufficient Input Validation",
-      "file": "vulnerable-package-3/index.js",
-      "line": 28,
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 7500,
       "severity": "high",
-      "confidence": 94,
-      "explanation": "Redirect targets are followed without validating that the redirected protocol still matches the allowed protocol policy."
+      "confidence": 99,
+      "explanation": "`fromPairs` assigns attacker-controlled keys directly into a plain object, which can set special keys like `__proto__` and lead to prototype pollution."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 752,
+      "severity": "high",
+      "confidence": 96,
+      "explanation": "`zipObject` uses `baseZipObject` with `assignValue`, allowing untrusted property names to be written into a plain object and potentially pollute prototypes."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 13784,
+      "severity": "high",
+      "confidence": 98,
+      "explanation": "`set` forwards arbitrary user-controlled paths to `baseSet`, which can create or modify nested properties from untrusted input and is a common prototype pollution sink if not constrained by callers."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 13949,
+      "severity": "high",
+      "confidence": 98,
+      "explanation": "`unset` accepts arbitrary paths and relies on `baseUnset`, which is a sensitive object-manipulation primitive that can be abused for prototype pollution in vulnerable call sites."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 13548,
+      "severity": "critical",
+      "confidence": 99,
+      "explanation": "`merge` recursively copies inherited and own properties from attacker-controlled sources, making it a well-known prototype pollution sink when merging untrusted objects."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 13583,
+      "severity": "critical",
+      "confidence": 99,
+      "explanation": "`mergeWith` exposes the same recursive merge behavior as `merge`, so untrusted source objects can inject special keys and pollute prototypes through custom merging logic."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 12897,
+      "severity": "high",
+      "confidence": 97,
+      "explanation": "`defaults` iterates over inherited properties and writes them into the destination object, which can allow special keys from untrusted input to alter object prototypes."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 12947,
+      "severity": "critical",
+      "confidence": 98,
+      "explanation": "`defaultsDeep` delegates to deep merge logic on untrusted inputs, creating a classic prototype pollution primitive when attacker-controlled keys like `__proto__` or `constructor.prototype` are present."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 12814,
+      "severity": "high",
+      "confidence": 96,
+      "explanation": "`assignWith` copies source properties into the destination object using caller-supplied data, which can be abused with special keys to pollute prototypes."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 12749,
+      "severity": "high",
+      "confidence": 96,
+      "explanation": "`assignIn` copies inherited enumerable properties as well as own properties, increasing the risk of prototype pollution when merging attacker-controlled objects."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 12782,
+      "severity": "high",
+      "confidence": 96,
+      "explanation": "`assignInWith` performs inherited-property assignment with a customizer, which can propagate malicious keys into the target object and enable prototype pollution."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 12897,
+      "severity": "high",
+      "confidence": 95,
+      "explanation": "`defaults` writes missing inherited keys from source objects into the target, creating a prototype pollution risk when source data is attacker-controlled."
+    },
+    {
+      "vulnerability_class": "Cross-Site Scripting",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 14894,
+      "severity": "critical",
+      "confidence": 99,
+      "explanation": "`template` compiles and executes arbitrary template code from the input string, so using untrusted templates can lead to script injection and XSS in web contexts."
+    },
+    {
+      "vulnerability_class": "Insufficient Input Validation",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 14967,
+      "severity": "medium",
+      "confidence": 92,
+      "explanation": "Although `template` validates `variable` against some forbidden characters, the rest of the template string is still interpreted as code without adequate validation of untrusted input."
     }
   ],
-  "independent_detection": true,
-  "matched_known_cve": true,
-  "additional_findings": []
+  "independent_detection": false,
+  "matched_known_cve": false,
+  "additional_findings": [
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 7500,
+      "severity": "high",
+      "confidence": 99,
+      "explanation": "`fromPairs` assigns attacker-controlled keys directly into a plain object, which can set special keys like `__proto__` and lead to prototype pollution."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 752,
+      "severity": "high",
+      "confidence": 96,
+      "explanation": "`zipObject` uses `baseZipObject` with `assignValue`, allowing untrusted property names to be written into a plain object and potentially pollute prototypes."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 13784,
+      "severity": "high",
+      "confidence": 98,
+      "explanation": "`set` forwards arbitrary user-controlled paths to `baseSet`, which can create or modify nested properties from untrusted input and is a common prototype pollution sink if not constrained by callers."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 13949,
+      "severity": "high",
+      "confidence": 98,
+      "explanation": "`unset` accepts arbitrary paths and relies on `baseUnset`, which is a sensitive object-manipulation primitive that can be abused for prototype pollution in vulnerable call sites."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 13548,
+      "severity": "critical",
+      "confidence": 99,
+      "explanation": "`merge` recursively copies inherited and own properties from attacker-controlled sources, making it a well-known prototype pollution sink when merging untrusted objects."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 13583,
+      "severity": "critical",
+      "confidence": 99,
+      "explanation": "`mergeWith` exposes the same recursive merge behavior as `merge`, so untrusted source objects can inject special keys and pollute prototypes through custom merging logic."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 12897,
+      "severity": "high",
+      "confidence": 97,
+      "explanation": "`defaults` iterates over inherited properties and writes them into the destination object, which can allow special keys from untrusted input to alter object prototypes."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 12947,
+      "severity": "critical",
+      "confidence": 98,
+      "explanation": "`defaultsDeep` delegates to deep merge logic on untrusted inputs, creating a classic prototype pollution primitive when attacker-controlled keys like `__proto__` or `constructor.prototype` are present."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 12814,
+      "severity": "high",
+      "confidence": 96,
+      "explanation": "`assignWith` copies source properties into the destination object using caller-supplied data, which can be abused with special keys to pollute prototypes."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 12749,
+      "severity": "high",
+      "confidence": 96,
+      "explanation": "`assignIn` copies inherited enumerable properties as well as own properties, increasing the risk of prototype pollution when merging attacker-controlled objects."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 12782,
+      "severity": "high",
+      "confidence": 96,
+      "explanation": "`assignInWith` performs inherited-property assignment with a customizer, which can propagate malicious keys into the target object and enable prototype pollution."
+    },
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 12897,
+      "severity": "high",
+      "confidence": 95,
+      "explanation": "`defaults` writes missing inherited keys from source objects into the target, creating a prototype pollution risk when source data is attacker-controlled."
+    },
+    {
+      "vulnerability_class": "Cross-Site Scripting",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 14894,
+      "severity": "critical",
+      "confidence": 99,
+      "explanation": "`template` compiles and executes arbitrary template code from the input string, so using untrusted templates can lead to script injection and XSS in web contexts."
+    },
+    {
+      "vulnerability_class": "Insufficient Input Validation",
+      "file": "dynamic-target/lodash-lodash-main/src/lodash-main/lodash.js",
+      "line": 14967,
+      "severity": "medium",
+      "confidence": 92,
+      "explanation": "Although `template` validates `variable` against some forbidden characters, the rest of the template string is still interpreted as code without adequate validation of untrusted input."
+    }
+  ]
 }

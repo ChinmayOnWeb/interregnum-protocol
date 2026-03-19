@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -169,15 +169,11 @@
           </div>
 
           <div class="live-main">
-            <article class="live-console glass-card">
-              <div class="panel-header"><p class="eyebrow">Agent Activity Feed</p><h3 id="live-title">Awaiting target...</h3></div>
-              <div class="console-frame"><div class="console-orb"></div><div class="terminal-stream" id="terminal-stream"></div></div>
-            </article>
-
             <div class="live-panels">
               <article class="snapshot-card glass-card"><div class="panel-header"><p class="eyebrow">Latest Artifact</p><h3 id="artifact-title">Pending agent output...</h3></div><pre class="artifact-preview" id="artifact-preview"></pre></article>
-              <article class="snapshot-card glass-card"><div class="panel-header"><p class="eyebrow">Pipeline Progress</p><h3 id="progress-status">Ready to deploy</h3></div><div class="progress-meter"><div class="progress-fill" id="progress-fill"></div></div><div class="mini-stats" id="mini-stats"></div></article>
+              <article class="snapshot-card glass-card"><div class="panel-header"><p class="eyebrow">Pipeline Progress</p><h3 id="live-title">Awaiting target...</h3></div><div class="live-feedback-strip"><div class="live-status-row"><span class="live-spinner" id="live-spinner" aria-hidden="true"></span><p class="panel-copy compact-status-copy loading-dots" id="progress-status">Ready to deploy</p></div><div class="live-timer" id="live-timer">Elapsed: 00:00.0s</div></div><div class="live-rotator" id="live-rotator">Standing by for target intake...</div><div class="progress-meter"><div class="progress-fill" id="progress-fill"></div></div><div class="mini-stats" id="mini-stats"></div></article>
             </div>
+            <div hidden aria-hidden="true"><div class="console-orb"></div><div class="terminal-stream" id="terminal-stream"></div></div>
           </div>
         </div>
       </section>

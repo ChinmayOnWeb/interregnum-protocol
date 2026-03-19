@@ -10,7 +10,7 @@ const { evaluateRun } = require('../eval');
 const { writeDemoArtifacts } = require('../demo_mode');
 const { runAdversarialTests } = require('../adversarial_tester');
 const { TARGETS, getTargetConfig, listAvailableTargets } = require('../target_config');
-const { buildCustomTarget, updateCurrentCustomTargetSource } = require('../custom_target');
+const { buildCustomTarget, readPreparationStatus, updateCurrentCustomTargetSource, writePreparationStatus } = require('../custom_target');
 const { generateDynamicHarness } = require('../dynamic_harness');
 
 const ROOT_DIR = path.join(__dirname, '..');
@@ -43,6 +43,17 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (url.pathname === '/api/prepare-status') {
+      const status = await readPreparationStatus();
+      return sendJson(res, status || {
+        status: 'idle',
+        phase: 'idle',
+        message: 'No custom target preparation is currently running.',
+        progress: 0,
+        target: 'custom'
+      });
+    }
+
     if (url.pathname === '/api/dashboard-data') {
       const targetKey = url.searchParams.get('target') || 'mixin-deep';
       const isDemo = targetKey !== 'custom' && Object.prototype.hasOwnProperty.call(TARGETS, targetKey);
@@ -63,9 +74,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  if (process.env.PROTOCOL_DEBUG === '1') {
-    console.log(`Patchline dashboard running at http://localhost:${PORT}`);
-  }
+  console.log(`Patchline dashboard running at http://localhost:${PORT}`);
 });
 
 function resolveStaticPath(pathname) {
@@ -101,11 +110,28 @@ function sendJson(res, payload) {
   res.end(JSON.stringify(payload, null, 2));
 }
 
+async function updatePreparationProgress(target, phase, progress, message, status = 'running', extra = {}) {
+  if (!target || !target.dynamic) return;
+  const current = (await readPreparationStatus()) || {};
+  await writePreparationStatus({
+    ...current,
+    ...extra,
+    status,
+    phase,
+    progress,
+    message,
+    target: target.key,
+    packageName: extra.packageName || target.packageName || current.packageName || '',
+    cve: extra.cve || target.cve || current.cve || ''
+  });
+}
+
 async function buildDashboardData(targetKey, options = {}) {
   let target = getTargetConfig(targetKey);
   if (options.demo) {
     await writeDemoArtifacts(target.key);
   } else if (target.dynamic) {
+    await updatePreparationProgress(target, 'classify', 86, `Scout is classifying ${target.packageName}`);
     const classificationOutput = await require('../classify_vulnerabilities').classifyVulnerabilities({ targetKey: target.key });
     await fs.writeFile(path.join(ROOT_DIR, 'classification_output.json'), `${JSON.stringify(classificationOutput, null, 2)}\n`, 'utf8');
     if (Array.isArray(classificationOutput.findings) && classificationOutput.findings.length > 0) {
@@ -113,6 +139,7 @@ async function buildDashboardData(targetKey, options = {}) {
       await updateCurrentCustomTargetSource(preferred.file);
       target = getTargetConfig(targetKey);
     }
+    await updatePreparationProgress(target, 'harness', 90, `Generating exploit and regression harness for ${target.packageName}`);
     await generateDynamicHarness(target.key);
   }
 
@@ -132,8 +159,11 @@ async function buildDashboardData(targetKey, options = {}) {
   let remediationError = null;
 
   try {
+    await updatePreparationProgress(target, 'remediate', 94, `Running remediation pipeline for ${target.packageName}`);
     verification = await verifyRemediation({ demo: Boolean(options.demo), targetKey: target.key });
+    await updatePreparationProgress(target, 'adversarial', 97, `Adversarial retesting in progress for ${target.packageName}`);
     adversarialResults = await runAdversarialTests({ targetKey: target.key });
+    await updatePreparationProgress(target, 'eval', 99, `Scoring patch quality and reliability for ${target.packageName}`);
     evalResults = await evaluateRun({ targetKey: target.key });
 
     [classificationOutput, analyzerOutput, patchOutput, reportMarkdown] = await Promise.all([
@@ -146,6 +176,7 @@ async function buildDashboardData(targetKey, options = {}) {
     afterExploit = runExploitTest({ expected: 'safe', targetKey: target.key, modulePath: path.join(ROOT_DIR, 'patched-package') });
     afterNormal = runNormalTests({ targetKey: target.key, modulePath: path.join(ROOT_DIR, 'patched-package') });
     confidenceScore = verification.confidence_score;
+    await updatePreparationProgress(target, 'ready', 100, `Remediation results are ready for ${target.packageName}`, 'complete');
   } catch (error) {
     remediationError = error;
     classificationOutput = await readJsonOrNull(path.join(ROOT_DIR, 'classification_output.json')) || { findings: [], independent_detection: false, matched_known_cve: false, additional_findings: [] };
@@ -182,6 +213,9 @@ async function buildDashboardData(targetKey, options = {}) {
       speed: { total_pipeline_time_seconds: 0, per_agent_step_ms: [] },
       reliability_log: { all_succeeded_on_first_try: false, retries_needed: 0, error_log: [String(error && error.message ? error.message : error)], agents: [] }
     };
+    await updatePreparationProgress(target, 'failed', 100, `Automated remediation needs manual review for ${target.packageName}`, 'error', {
+      error: String(error && error.message ? error.message : error)
+    });
   }
 
   return {
@@ -238,6 +272,7 @@ async function readJsonOrNull(filePath) {
     return null;
   }
 }
+
 function buildBaseballCard(target, classificationOutput, adversarialResults, beforeExploit, afterNormal, patchOutput, confidenceScore) {
   return [
     { label: 'CVE', value: target.cve, note: 'Advisory or operator-supplied vulnerability identifier under review' },
@@ -255,5 +290,3 @@ async function readJson(filePath) {
   const raw = await fs.readFile(filePath, 'utf8');
   return JSON.parse(raw);
 }
-
-

@@ -3,6 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { classifyVulnerabilities, CLASSIFICATION_OUTPUT_PATH } = require('./classify_vulnerabilities');
+const { gatherVulnerabilityIntel, INTEL_OUTPUT_PATH } = require('./intel_gatherer');
 const { analyzeTargetVulnerability, ANALYZER_OUTPUT_PATH } = require('./analyzer');
 const { patchTarget, PATCH_OUTPUT_PATH } = require('./patcher');
 const { verifyRemediation } = require('./verifier');
@@ -109,6 +110,22 @@ async function main() {
 
     let analyzerOutput = null;
     let patchOutput = null;
+    let intelOutput = null;
+
+    await runTimedStep(runState, 'intel', async () => {
+      printSection(demo ? 'Vulnerability Intel (demo mode)' : 'Vulnerability Intel');
+      intelOutput = await gatherVulnerabilityIntel({ targetKey });
+      await writeJson(INTEL_OUTPUT_PATH, intelOutput);
+      console.log(JSON.stringify(intelOutput, null, 2));
+      return {
+        attempts: 1,
+        metadata: {
+          cwe: intelOutput.cwe,
+          fixed_version: intelOutput.fixed_version,
+          fix_commit_url: intelOutput.fix_commit_url
+        }
+      };
+    });
 
     await runTimedStep(runState, 'scout', async () => {
       printSection(demo ? 'Scout Classification (demo mode)' : 'Scout Classification');
@@ -155,7 +172,7 @@ async function main() {
         return { attempts: 1, metadata: { validation_passed: true, target: target.key } };
       }
 
-      patchOutput = await patchTarget({ targetKey, analyzerOutput });
+      patchOutput = await patchTarget({ targetKey, analyzerOutput, intelOutput });
       await writeJson(PATCH_OUTPUT_PATH, patchOutput);
       console.log(patchOutput.patch_diff);
       return { attempts: patchOutput.metadata && patchOutput.metadata.attempts ? patchOutput.metadata.attempts : 1, metadata: patchOutput.metadata || {} };
@@ -181,7 +198,7 @@ async function main() {
 
       if (!demo && adversarialResults.bypasses_found > 0) {
         printSection('Striker Re-engagement');
-        patchOutput = await patchTarget({ targetKey, analyzerOutput, adversarialFindings: adversarialResults.bypasses });
+        patchOutput = await patchTarget({ targetKey, analyzerOutput, intelOutput, adversarialFindings: adversarialResults.bypasses });
         await writeJson(PATCH_OUTPUT_PATH, patchOutput);
         console.log(patchOutput.patch_diff);
         await verifyRemediation({ demo, targetKey });

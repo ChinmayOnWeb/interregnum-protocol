@@ -4,6 +4,7 @@ server-out.log
 server-err.log
 generated_harness.json
 current_custom_target.json
+custom_prepare_status.json
 analyzer_output.json
 classification_output.json
 patch_output.json

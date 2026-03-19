@@ -9,6 +9,7 @@ const { writeDemoArtifacts } = require('./demo_mode');
 const { runExploitTest } = require('./exploit_test');
 const { runNormalTests } = require('./normal_tests');
 const { getTargetConfig, parseTargetFlag } = require('./target_config');
+const { gatherVulnerabilityIntel, readIntelOutput, INTEL_OUTPUT_PATH } = require('./intel_gatherer');
 
 const REPORT_PATH = path.join(__dirname, 'REMEDIATION_REPORT.md');
 
@@ -26,9 +27,15 @@ async function readJsonOrNull(filePath) {
 
 async function ensureArtifacts(options = {}) {
   const targetKey = options.targetKey || 'mixin-deep';
+  const target = getTargetConfig(targetKey);
 
   if (options.demo) {
     return writeDemoArtifacts(targetKey);
+  }
+
+  let intelOutput = await readIntelOutput();
+  if (!intelOutput || intelOutput.package !== target.packageName) {
+    intelOutput = await gatherVulnerabilityIntel({ targetKey });
   }
 
   let analyzerOutput = await readJsonOrNull(ANALYZER_OUTPUT_PATH);
@@ -39,11 +46,11 @@ async function ensureArtifacts(options = {}) {
 
   let patchOutput = await readJsonOrNull(PATCH_OUTPUT_PATH);
   if (!patchOutput || patchOutput.target !== targetKey) {
-    patchOutput = await patchTarget({ analyzerOutput, targetKey });
+    patchOutput = await patchTarget({ analyzerOutput, intelOutput, targetKey });
     await fs.writeFile(PATCH_OUTPUT_PATH, `${JSON.stringify(patchOutput, null, 2)}\n`, 'utf8');
   }
 
-  return { analyzerOutput, patchOutput };
+  return { intelOutput, analyzerOutput, patchOutput };
 }
 
 async function collectTestResults(targetKey) {
@@ -90,7 +97,7 @@ function formatAdversarialAttempts(adversarialResults) {
     .join('\n');
 }
 
-function buildReport({ target, cveDescription, analyzerOutput, patchOutput, testResults, confidenceScore, adversarialResults }) {
+function buildReport({ target, cveDescription, intelOutput, analyzerOutput, patchOutput, testResults, confidenceScore, adversarialResults }) {
   return `# Remediation Report
 
 ## Vulnerability Summary
@@ -105,6 +112,15 @@ Source summary:
     .slice(0, 4)
     .join(' ')
     .replace(/>/g, '\\>')}
+
+## Vulnerability Intelligence
+
+- Intel artifact: \`${INTEL_OUTPUT_PATH}\`
+- CWE: ${intelOutput && intelOutput.cwe ? `${intelOutput.cwe}${intelOutput.cwe_name ? ` (${intelOutput.cwe_name})` : ''}` : 'Unknown'}
+- Known fixed version: ${intelOutput && intelOutput.fixed_version ? intelOutput.fixed_version : 'Unknown'}
+- Known fix commit: ${intelOutput && intelOutput.fix_commit_url ? intelOutput.fix_commit_url : 'No known fix commit'}
+- Known fix files: ${intelOutput && Array.isArray(intelOutput.fix_files_changed) && intelOutput.fix_files_changed.length > 0 ? intelOutput.fix_files_changed.join(', ') : 'Unknown'}
+- Data sources: ${intelOutput && Array.isArray(intelOutput.data_sources) && intelOutput.data_sources.length > 0 ? intelOutput.data_sources.join(', ') : 'None'}
 
 ## Root Cause Analysis
 
@@ -177,7 +193,7 @@ Scoring factors:
 async function verifyRemediation(options = {}) {
   const targetKey = options.targetKey || 'mixin-deep';
   const target = getTargetConfig(targetKey);
-  const { analyzerOutput, patchOutput } = await ensureArtifacts(options);
+  const { intelOutput, analyzerOutput, patchOutput } = await ensureArtifacts(options);
   const [cveDescription, testResults, existingAdversarial] = await Promise.all([
     fs.readFile(target.cvePath, 'utf8'),
     collectTestResults(targetKey),
@@ -189,7 +205,7 @@ async function verifyRemediation(options = {}) {
     : await runAdversarialTests({ targetKey, patchDiff: patchOutput.patch_diff });
 
   const confidenceScore = computeConfidenceScore({ analyzerOutput, patchOutput, testResults, adversarialResults });
-  const report = buildReport({ target, cveDescription, analyzerOutput, patchOutput, testResults, confidenceScore, adversarialResults });
+  const report = buildReport({ target, cveDescription, intelOutput, analyzerOutput, patchOutput, testResults, confidenceScore, adversarialResults });
   await fs.writeFile(REPORT_PATH, `${report}\n`, 'utf8');
 
   return {
@@ -197,6 +213,7 @@ async function verifyRemediation(options = {}) {
     package_name: target.packageName,
     cve: target.cve,
     report_path: REPORT_PATH,
+    intel_path: INTEL_OUTPUT_PATH,
     confidence_score: confidenceScore,
     test_results: testResults,
     adversarial_results: adversarialResults

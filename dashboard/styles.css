@@ -383,6 +383,17 @@ button { cursor: pointer; }
   display: grid;
   gap: 0.8rem;
   font-family: var(--mono-font);
+  min-height: 220px;
+  align-content: start;
+}
+.terminal-stream:empty::before {
+  content: "Live agent events will appear here as the pipeline advances.";
+  display: block;
+  padding: 1rem 1.05rem;
+  border-radius: 18px;
+  border: 1px dashed rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.03);
+  color: var(--text-muted);
 }
 .terminal-line {
   padding: 0.85rem 1rem;
@@ -1326,7 +1337,8 @@ body {
 
 .pipeline-node.is-active::before {
   background: linear-gradient(135deg, rgba(125,211,252,0.95), rgba(255,255,255,0.98));
-  animation: pulse-active 1.2s ease-in-out infinite;
+  box-shadow: 0 0 26px rgba(125,211,252,0.38), 0 0 0 0 rgba(125,211,252,0.32);
+  animation: pulse-active 1s ease-in-out infinite;
 }
 
 .pipeline-node.is-complete::before {
@@ -1384,12 +1396,13 @@ body {
   opacity: 1;
   transform: translateX(8px);
   border-left-color: rgba(125,211,252,0.95);
-  background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(125,211,252,0.08), rgba(255,255,255,0.03));
+  background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(125,211,252,0.12), rgba(255,255,255,0.03));
+  box-shadow: 0 0 0 1px rgba(125,211,252,0.14), 0 18px 40px rgba(15, 23, 42, 0.24), 0 0 28px rgba(125,211,252,0.12);
 }
 
 .live-stage.is-active .live-stage-number {
-  animation: pulse-active 1.2s ease-in-out infinite;
-  box-shadow: 0 0 0 0 rgba(125,211,252,0.35);
+  animation: pulse-active 1s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(125,211,252,0.42), 0 0 24px rgba(125,211,252,0.22);
 }
 
 .live-stage.is-active .live-stage-indicator::before {
@@ -1503,6 +1516,64 @@ body {
 .artifact-preview.is-visible {
   transform: scale(1);
   opacity: 1;
+}
+
+.live-feedback-strip {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.6rem 0 0.7rem;
+}
+
+.live-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.live-spinner {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  border: 2px solid rgba(255,255,255,0.18);
+  border-top-color: rgba(125,211,252,0.96);
+  border-right-color: rgba(255,255,255,0.78);
+  opacity: 0.35;
+  box-shadow: 0 0 0 0 rgba(125,211,252,0);
+  transition: opacity 0.25s ease, box-shadow 0.25s ease;
+}
+
+.live-spinner.is-active {
+  opacity: 1;
+  animation: spin-loader 1s linear infinite, pulse-active 1.6s ease-in-out infinite;
+}
+
+.live-timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(220, 244, 255, 0.88);
+}
+
+.live-rotator {
+  min-height: 1.35rem;
+  font-size: 0.92rem;
+  color: rgba(224, 242, 254, 0.82);
+  opacity: 0.94;
+  transform: translateY(0);
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+.live-rotator.is-entering {
+  animation: rotator-in 0.35s ease;
+}
+
+.loading-dots::after {
+  content: '';
+  display: inline-block;
+  width: 1.6em;
+  text-align: left;
+  animation: loading-dots 1.2s steps(4, end) infinite;
 }
 
 .progress-fill.is-running {
@@ -2703,3 +2774,36 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+.live-console {
+  display: none;
+}
+
+.live-main {
+  gap: 0;
+}
+
+.live-panels {
+  grid-template-columns: 1fr 1fr;
+}
+
+.compact-status-copy {
+  margin: 0 0 0.9rem;
+}
+
+
+
+
+@keyframes rotator-in {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes loading-dots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+  100% { content: ''; }
+}
+

@@ -2,21 +2,30 @@
 
 ## Vulnerability Summary
 
-`CVE-2023-28155` affects `request` through 2.88.2. Cross-protocol redirects can bypass SSRF mitigations, and the package is no longer maintained by the original maintainer.
+`CVE-2019-10746` affects `mixin-deep` before version 1.3.2 and version 2.0.0. The vulnerable merge logic can be abused with a `constructor -> prototype` payload to pollute `Object.prototype`.
 
 Source summary:
 
-> CVE-2023-28155 affects the request package for Node.js through 2.88.2. The package can allow a bypass of SSRF mitigations when an attacker-controlled server issues a cross-protocol redirect, such as HTTPS to HTTP or HTTP to HTTPS. This vulnerability is especially relevant because request is no longer actively maintained by its original maintainer.
+> CVE-2019-10746 Description: mixin-deep is vulnerable to Prototype Pollution in versions before 1.3.2 and version 2.0.0. The function mixin-deep could be tricked into adding or modifying properties of Object.prototype
+
+## Vulnerability Intelligence
+
+- Intel artifact: `D:\UCB\CODEX\intel_output.json`
+- CWE: Unknown
+- Known fixed version: Unknown
+- Known fix commit: No known fix commit
+- Known fix files: Unknown
+- Data sources: None
 
 ## Root Cause Analysis
 
-The vulnerable request flow validates the protocol of the initial URL but does not re-validate redirect targets. An attacker-controlled server can respond with a cross-protocol redirect from an allowed https URL to a blocked http URL, bypassing SSRF policy and causing the client to follow a destination that should have been rejected.
+The vulnerable merge logic only blocks the "__proto__" key at the current property level. When attacker-controlled input uses the path constructor -> prototype -> polluted, the code reads this["constructor"] from the target object, which resolves to the built-in Object constructor. The recursive mixin then descends into Object.prototype and writes attacker data there, polluting every plain object.
 
 ### Dangerous Code Path
 
-- Line 17: `if (!isAllowedProtocol(config.url, config.allowedProtocols)) {` - The initial request URL is validated once, which creates a false sense of safety if later redirects are not checked.
-- Line 29: `for (const redirectUrl of config.redirects) {` - The redirect chain is processed without any per-redirect policy enforcement.
-- Line 32: `current = redirectUrl;` - A redirected URL can switch protocols and bypass the original SSRF mitigation.
+- Line 24: `if (key === '__proto__') {` - This guard is incomplete because it ignores the constructor/prototype prototype-pollution path.
+- Line 28: `var obj = this[key];` - Reading this["constructor"] resolves to Object, which gives the attacker access to Object.prototype during recursion.
+- Line 30: `mixinDeep(obj, val);` - Recursive descent continues into the inherited constructor/prototype chain and writes attacker-controlled properties.
 
 ## Patch
 
@@ -24,22 +33,16 @@ The vulnerable request flow validates the protocol of the initial URL but does n
 --- a/index.js
 +++ b/index.js
 @@
-   let current = config.url;
- 
-   for (const redirectUrl of config.redirects) {
-+    if (!isAllowedProtocol(redirectUrl, config.allowedProtocols)) {
-+      return {
-+        ok: false,
-+        blocked: true,
-+        reason: 'redirect protocol blocked',
-+        finalUrl: current,
-+        blockedUrl: redirectUrl
-+      };
-+    }
-+
-     current = redirectUrl;
+-  if (key === '__proto__') {
++  if (isUnsafeKey(key)) {
+     return;
    }
-
+@@
+ }
++
++function isUnsafeKey(key) {
++  return key === '__proto__' || key === 'constructor' || key === 'prototype';
++}
 ```
 
 ## Test Results Before and After
@@ -50,37 +53,37 @@ The vulnerable request flow validates the protocol of the initial URL but does n
 - Normal functionality tests: PASS
 
 ```text
-VULNERABLE: cross-protocol redirect bypass confirmed
+VULNERABLE: prototype pollution confirmed
 ```
 
 ```text
-PASS: allows a direct https request
-PASS: follows same-protocol https redirects
-PASS: blocks an initial disallowed protocol
-PASS: returns the final same-protocol redirect cleanly
+PASS: merges nested objects
+PASS: overwrites leaf values
+PASS: merges multiple sources
+PASS: replaces arrays while preserving other nested merges
 ALL NORMAL TESTS PASSED
 ```
 
 ### After Patch
 
-- Exploit test: PASS (prototype pollution blocked)
+- Exploit test: PASS (exploit blocked)
 - Normal functionality tests: PASS
 
 ```text
-SAFE: redirect bypass blocked
+SAFE: prototype pollution blocked
 ```
 
 ```text
-PASS: allows a direct https request
-PASS: follows same-protocol https redirects
-PASS: blocks an initial disallowed protocol
-PASS: returns the final same-protocol redirect cleanly
+PASS: merges nested objects
+PASS: overwrites leaf values
+PASS: merges multiple sources
+PASS: replaces arrays while preserving other nested merges
 ALL NORMAL TESTS PASSED
 ```
 
 ## Patch Strategy
 
-Re-validate every redirect target against the allowed protocol set before following it. If a redirect changes to a disallowed protocol, stop and return a blocked result instead of following the redirect.
+Reject dangerous keys before any read or recursive merge happens. Add a shared unsafe-key check that returns true for "__proto__", "constructor", and "prototype", and short-circuit the copy operation for those keys. Keep the rest of the merge behavior unchanged.
 
 ## Adversarial Hardening
 
@@ -88,14 +91,14 @@ Re-validate every redirect target against the allowed protocol set before follow
 - Verdict: HARDENED
 - Bypasses found: 0
 
-- https to http redirect: BLOCKED
-- double redirect ending in http: BLOCKED
-- uppercase protocol redirect: BLOCKED
-- redirect to localhost metadata endpoint: BLOCKED
-- mixed redirect chain: BLOCKED
-- array redirect to link local: BLOCKED
-- redirect after safe hop: BLOCKED
-- redirect to plain http file: BLOCKED
+- nested __proto__ payload: BLOCKED
+- constructor.prototype payload: BLOCKED
+- Object.defineProperty __proto__ payload: BLOCKED
+- unicode encoded __proto__ key: BLOCKED
+- recursive constructor chain: BLOCKED
+- array based prototype vector: BLOCKED
+- double recursive pollution attempt: BLOCKED
+- array path inside nested object: BLOCKED
 
 ## Confidence Score
 

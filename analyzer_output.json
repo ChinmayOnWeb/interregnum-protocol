@@ -1,24 +1,24 @@
 {
-  "target": "request",
-  "package_name": "request",
-  "cve": "CVE-2023-28155",
-  "root_cause": "The vulnerable request flow validates the protocol of the initial URL but does not re-validate redirect targets. An attacker-controlled server can respond with a cross-protocol redirect from an allowed https URL to a blocked http URL, bypassing SSRF policy and causing the client to follow a destination that should have been rejected.",
+  "target": "mixin-deep",
+  "package_name": "mixin-deep",
+  "cve": "CVE-2019-10746",
+  "root_cause": "The vulnerable merge logic only blocks the \"__proto__\" key at the current property level. When attacker-controlled input uses the path constructor -> prototype -> polluted, the code reads this[\"constructor\"] from the target object, which resolves to the built-in Object constructor. The recursive mixin then descends into Object.prototype and writes attacker data there, polluting every plain object.",
   "dangerous_lines": [
     {
-      "line": 17,
-      "code": "if (!isAllowedProtocol(config.url, config.allowedProtocols)) {",
-      "reason": "The initial request URL is validated once, which creates a false sense of safety if later redirects are not checked."
+      "line": 24,
+      "code": "if (key === '__proto__') {",
+      "reason": "This guard is incomplete because it ignores the constructor/prototype prototype-pollution path."
     },
     {
-      "line": 29,
-      "code": "for (const redirectUrl of config.redirects) {",
-      "reason": "The redirect chain is processed without any per-redirect policy enforcement."
+      "line": 28,
+      "code": "var obj = this[key];",
+      "reason": "Reading this[\"constructor\"] resolves to Object, which gives the attacker access to Object.prototype during recursion."
     },
     {
-      "line": 32,
-      "code": "current = redirectUrl;",
-      "reason": "A redirected URL can switch protocols and bypass the original SSRF mitigation."
+      "line": 30,
+      "code": "mixinDeep(obj, val);",
+      "reason": "Recursive descent continues into the inherited constructor/prototype chain and writes attacker-controlled properties."
     }
   ],
-  "patch_strategy": "Re-validate every redirect target against the allowed protocol set before following it. If a redirect changes to a disallowed protocol, stop and return a blocked result instead of following the redirect."
+  "patch_strategy": "Reject dangerous keys before any read or recursive merge happens. Add a shared unsafe-key check that returns true for \"__proto__\", \"constructor\", and \"prototype\", and short-circuit the copy operation for those keys. Keep the rest of the merge behavior unchanged."
 }

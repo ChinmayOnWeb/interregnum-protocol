@@ -1,69 +1,76 @@
 {
-  "mode": "demo",
-  "target": "request",
+  "mode": "live",
+  "target": "custom",
   "package_name": "request",
   "cve": "CVE-2023-28155",
-  "started_at": "2026-03-18T06:15:29.012Z",
-  "finished_at": "2026-03-18T06:15:29.086Z",
-  "total_duration_ms": 73,
+  "started_at": "2026-03-18T07:39:33.188Z",
+  "finished_at": "2026-03-18T07:40:28.077Z",
+  "total_duration_ms": 54887,
   "steps": [
     {
       "name": "scout",
-      "started_at": "2026-03-18T06:15:29.018Z",
+      "started_at": "2026-03-18T07:39:33.661Z",
       "success": true,
       "attempts": 1,
-      "finished_at": "2026-03-18T06:15:29.034Z",
-      "duration_ms": 16,
+      "finished_at": "2026-03-18T07:39:38.152Z",
+      "duration_ms": 4491,
       "metadata": {
-        "source": "demo",
-        "findings": 1,
+        "findings": 5,
         "independent_detection": true
       }
     },
     {
       "name": "analysis",
-      "started_at": "2026-03-18T06:15:29.034Z",
+      "started_at": "2026-03-18T07:39:38.152Z",
       "success": true,
       "attempts": 1,
-      "finished_at": "2026-03-18T06:15:29.044Z",
-      "duration_ms": 10,
+      "finished_at": "2026-03-18T07:39:41.083Z",
+      "duration_ms": 2931,
       "metadata": {
-        "source": "demo",
-        "target": "request"
+        "dangerous_lines": 4
       }
     },
     {
       "name": "patch",
-      "started_at": "2026-03-18T06:15:29.044Z",
+      "started_at": "2026-03-18T07:39:41.083Z",
       "success": true,
       "attempts": 1,
-      "finished_at": "2026-03-18T06:15:29.055Z",
-      "duration_ms": 11,
+      "finished_at": "2026-03-18T07:40:28.006Z",
+      "duration_ms": 46923,
       "metadata": {
-        "validation_passed": true,
-        "target": "request"
+        "attempts": 1,
+        "retries_needed": 0,
+        "succeeded_on_first_try": true,
+        "attempt_log": [
+          {
+            "attempt": 1,
+            "success": true,
+            "reason": "validation passed"
+          }
+        ],
+        "addressed_adversarial_findings": false
       }
     },
     {
       "name": "verify",
-      "started_at": "2026-03-18T06:15:29.060Z",
+      "started_at": "2026-03-18T07:40:28.019Z",
       "success": true,
       "attempts": 1,
-      "finished_at": "2026-03-18T06:15:29.081Z",
-      "duration_ms": 21,
+      "finished_at": "2026-03-18T07:40:28.050Z",
+      "duration_ms": 31,
       "metadata": {
-        "confidence_score": 100
+        "confidence_score": 65
       }
     },
     {
       "name": "adversarial",
-      "started_at": "2026-03-18T06:15:29.081Z",
+      "started_at": "2026-03-18T07:40:28.050Z",
       "success": true,
       "attempts": 1,
-      "finished_at": "2026-03-18T06:15:29.086Z",
-      "duration_ms": 5,
+      "finished_at": "2026-03-18T07:40:28.077Z",
+      "duration_ms": 27,
       "metadata": {
-        "adversarial_tests_run": 8,
+        "adversarial_tests_run": 3,
         "bypasses_found": 0,
         "patch_resilience_score": "100%",
         "verdict": "HARDENED"

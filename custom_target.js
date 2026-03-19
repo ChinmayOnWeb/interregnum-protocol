@@ -10,6 +10,86 @@ const execFileAsync = promisify(execFile);
 const ROOT_DIR = __dirname;
 const DYNAMIC_ROOT = path.join(ROOT_DIR, 'dynamic-target');
 const CURRENT_CUSTOM_TARGET_PATH = path.join(ROOT_DIR, 'current_custom_target.json');
+const PREP_STATUS_PATH = path.join(ROOT_DIR, 'custom_prepare_status.json');
+const PREP_STATUS_TMP_PATH = `${PREP_STATUS_PATH}.tmp`;
+
+async function writePreparationStatus(payload) {
+  const current = await readPreparationStatus().catch(() => null);
+  const next = {
+    startedAt: payload.startedAt || current?.startedAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    status: payload.status || (Number(payload.progress || 0) >= 100 ? 'complete' : 'running'),
+    phase: payload.phase || current?.phase || 'idle',
+    message: payload.message || current?.message || '',
+    progress: Math.max(0, Math.min(100, Number(payload.progress || 0))),
+    packageName: payload.packageName || current?.packageName || '',
+    cve: payload.cve || current?.cve || '',
+    input: payload.input || current?.input || '',
+    inputKind: payload.inputKind || current?.inputKind || '',
+    target: payload.target || current?.target || 'custom',
+    error: payload.error || (payload.status === 'error' ? current?.error || '' : '')
+  };
+  const serialized = `${JSON.stringify(next, null, 2)}\n`;
+  await fsp.writeFile(PREP_STATUS_TMP_PATH, serialized, 'utf8');
+  await fsp.rename(PREP_STATUS_TMP_PATH, PREP_STATUS_PATH);
+  return next;
+}
+
+function extractFirstJsonObject(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  if (text.startsWith('{') && text.endsWith('}')) return text;
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === '{') depth += 1;
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(start, index + 1);
+      }
+    }
+  }
+  return null;
+}
+
+async function readPreparationStatus() {
+  try {
+    const raw = await fsp.readFile(PREP_STATUS_PATH, 'utf8');
+    try {
+      return JSON.parse(raw);
+    } catch (parseError) {
+      const recovered = extractFirstJsonObject(raw);
+      if (!recovered) throw parseError;
+      return JSON.parse(recovered);
+    }
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+async function clearPreparationStatus() {
+  await fsp.rm(PREP_STATUS_PATH, { force: true });
+}
 
 function sanitizePackageKey(name) {
   return String(name || 'custom-package').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -105,7 +185,15 @@ function mapAdvisoryToClass(vuln) {
   const text = `${vuln.summary || ''} ${vuln.details || ''}`.toLowerCase();
   if (text.includes('prototype pollution')) return 'Prototype Pollution';
   if (text.includes('path traversal')) return 'Path Traversal';
-  if (text.includes('redos') || text.includes('regular expression denial of service')) return 'ReDoS (Regular Expression Denial of Service)';
+  if (
+    text.includes('redos') ||
+    text.includes('regular expression denial of service') ||
+    text.includes('regular expression complexity') ||
+    text.includes('(re)dos') ||
+    text.includes('resource consumption')
+  ) {
+    return 'ReDoS (Regular Expression Denial of Service)';
+  }
   if (text.includes('command injection')) return 'Command Injection';
   if (text.includes('deserialization')) return 'Insecure Deserialization';
   if (text.includes('sql injection')) return 'SQL Injection';
@@ -130,7 +218,115 @@ function buildKeywordList(vulnerabilityClass, advisoryText) {
   return Array.from(keywords);
 }
 
+function parseGitHubCommitReference(url) {
+  try {
+    const parsed = new URL(url);
+    if (!/github\.com$/i.test(parsed.hostname)) return null;
+    const parts = parsed.pathname.replace(/^\/+|\/+$/g, '').split('/');
+    if (parts.length < 4 || parts[2] !== 'commit') return null;
+    return {
+      owner: parts[0],
+      repo: parts[1].replace(/\.git$/i, ''),
+      sha: parts[3],
+      url
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function findFixCommitReference(advisory, repoHint) {
+  const references = Array.isArray(advisory && advisory.references) ? advisory.references : [];
+  const commitRefs = references
+    .map((reference) => parseGitHubCommitReference(reference && reference.url ? reference.url : reference))
+    .filter(Boolean);
+
+  if (repoHint) {
+    const matching = commitRefs.find((ref) => ref.owner === repoHint.owner && ref.repo === repoHint.repo);
+    if (matching) return matching;
+  }
+
+  return commitRefs[0] || null;
+}
+
+function parseSemver(version) {
+  const match = String(version || '').trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  if (!match) return null;
+  return match.slice(1).map(Number);
+}
+
+function compareSemver(a, b) {
+  const parsedA = parseSemver(a);
+  const parsedB = parseSemver(b);
+  if (!parsedA || !parsedB) return 0;
+  for (let index = 0; index < 3; index += 1) {
+    if (parsedA[index] > parsedB[index]) return 1;
+    if (parsedA[index] < parsedB[index]) return -1;
+  }
+  return 0;
+}
+
+function extractSemverVersionsFromAdvisory(advisory) {
+  const affected = Array.isArray(advisory && advisory.affected) ? advisory.affected : [];
+  const versions = [];
+  const fixedVersions = [];
+
+  for (const item of affected) {
+    const itemVersions = Array.isArray(item && item.versions) ? item.versions : [];
+    itemVersions.forEach((version) => {
+      if (parseSemver(version)) versions.push(version);
+    });
+
+    const ranges = Array.isArray(item && item.ranges) ? item.ranges : [];
+    for (const range of ranges) {
+      const events = Array.isArray(range && range.events) ? range.events : [];
+      for (const event of events) {
+        if (event && parseSemver(event.fixed)) fixedVersions.push(event.fixed);
+      }
+    }
+  }
+
+  return { versions, fixedVersions };
+}
+
+function chooseVulnerableRegistryVersion(registry, advisory, fallbackVersion) {
+  const allVersions = Object.keys((registry && registry.versions) || {}).filter((version) => parseSemver(version));
+  if (allVersions.length === 0) return fallbackVersion;
+
+  const { versions, fixedVersions } = extractSemverVersionsFromAdvisory(advisory);
+  const sorted = allVersions.sort((left, right) => compareSemver(right, left));
+
+  if (versions.length > 0) {
+    const vulnerableSet = new Set(versions);
+    const matched = sorted.find((version) => vulnerableSet.has(version));
+    if (matched) return matched;
+  }
+
+  const fixed = fixedVersions.sort((left, right) => compareSemver(right, left))[0];
+  if (fixed) {
+    const matched = sorted.find((version) => compareSemver(version, fixed) < 0);
+    if (matched) return matched;
+  }
+
+  return fallbackVersion;
+}
+
+async function fetchOsvAdvisoryById(advisoryId) {
+  try {
+    return await fetchJson(`https://api.osv.dev/v1/vulns/${encodeURIComponent(advisoryId)}`);
+  } catch (_) {
+    return null;
+  }
+}
+
 async function chooseAdvisory(packageName, version, manualAdvisory) {
+  if (manualAdvisory) {
+    const directHit = await fetchOsvAdvisoryById(manualAdvisory);
+    if (directHit) {
+      return directHit;
+    }
+  }
+
   if (!packageName) {
     return {
       id: manualAdvisory || 'UNSPECIFIED-ADVISORY',
@@ -179,6 +375,31 @@ async function chooseAdvisory(packageName, version, manualAdvisory) {
   }
 
   return selected;
+}
+
+async function resolveGitHubVulnerableSnapshot(parsed, advisory, reportStatus) {
+  const fixCommit = findFixCommitReference(advisory, parsed);
+  if (!fixCommit) return null;
+
+  if (reportStatus) {
+    await reportStatus({
+      phase: 'snapshot',
+      message: `Resolving vulnerable pre-fix snapshot for ${parsed.owner}/${parsed.repo}`,
+      progress: 32
+    });
+  }
+
+  const commitPayload = await fetchJson(`https://api.github.com/repos/${fixCommit.owner}/${fixCommit.repo}/commits/${fixCommit.sha}`, {
+    headers: { 'User-Agent': 'Project-Praetorian', 'Accept': 'application/vnd.github+json' }
+  });
+  const parents = Array.isArray(commitPayload.parents) ? commitPayload.parents : [];
+  if (!parents[0] || !parents[0].sha) return null;
+
+  return {
+    parentSha: parents[0].sha,
+    fixCommitUrl: fixCommit.url,
+    artifactUrl: `https://codeload.github.com/${fixCommit.owner}/${fixCommit.repo}/zip/${parents[0].sha}`
+  };
 }
 
 async function extractTarball(tarballPath, destDir) {
@@ -298,18 +519,32 @@ async function installPackageDependencies(packageDir) {
   });
 }
 
-async function createWorkspaceFromArchive({ slug, artifactUrl, archiveType }) {
+async function createWorkspaceFromArchive({ slug, artifactUrl, archiveType, reportStatus }) {
   const workspaceDir = path.join(DYNAMIC_ROOT, slug);
   await fsp.rm(workspaceDir, { recursive: true, force: true });
   await fsp.mkdir(workspaceDir, { recursive: true });
 
   const archivePath = path.join(workspaceDir, archiveType === 'zip' ? `${slug}.zip` : `${slug}.tgz`);
   const extractDir = path.join(workspaceDir, 'src');
+  if (reportStatus) {
+    await reportStatus({
+      phase: 'download',
+      message: `Downloading source archive for ${slug}`,
+      progress: 36
+    });
+  }
   const archive = await fetchBuffer(artifactUrl, {
     headers: { 'User-Agent': 'Project-Praetorian' }
   });
   await fsp.writeFile(archivePath, archive);
 
+  if (reportStatus) {
+    await reportStatus({
+      phase: 'extract',
+      message: `Extracting package archive for ${slug}`,
+      progress: 52
+    });
+  }
   if (archiveType === 'zip') {
     await extractZip(archivePath, extractDir);
   } else {
@@ -317,35 +552,69 @@ async function createWorkspaceFromArchive({ slug, artifactUrl, archiveType }) {
   }
 
   const packageDir = await detectPackageRoot(extractDir);
+  if (reportStatus) {
+    await reportStatus({
+      phase: 'install',
+      message: `Installing runtime dependencies for ${slug}`,
+      progress: 68
+    });
+  }
   await installPackageDependencies(packageDir);
   return { workspaceDir, packageDir };
 }
 
-async function buildNpmTarget(parsed, manualCve) {
+async function buildNpmTarget(parsed, manualCve, reportStatus) {
+  if (reportStatus) {
+    await reportStatus({
+      phase: 'metadata',
+      message: `Fetching npm package metadata for ${parsed.packageName}`,
+      progress: 18,
+      packageName: parsed.packageName,
+      inputKind: 'npm'
+    });
+  }
   const registry = await fetchJson(`https://registry.npmjs.org/${encodeURIComponent(parsed.packageName)}`);
   const latestVersion = registry['dist-tags'] && registry['dist-tags'].latest;
   if (!latestVersion) throw new Error(`Could not determine the latest version for ${parsed.packageName}.`);
 
-  const versionMeta = registry.versions && registry.versions[latestVersion];
+  if (reportStatus) {
+    await reportStatus({
+      phase: 'advisory',
+      message: `Looking up advisory context for ${parsed.packageName}@${latestVersion}`,
+      progress: 28,
+      packageName: parsed.packageName
+    });
+  }
+  const advisory = await chooseAdvisory(parsed.packageName, latestVersion, manualCve);
+  const selectedVersion = chooseVulnerableRegistryVersion(registry, advisory, latestVersion);
+  const versionMeta = registry.versions && registry.versions[selectedVersion];
   if (!versionMeta || !versionMeta.dist || !versionMeta.dist.tarball) {
-    throw new Error(`Registry metadata for ${parsed.packageName}@${latestVersion} is incomplete.`);
+    throw new Error(`Registry metadata for ${parsed.packageName}@${selectedVersion} is incomplete.`);
   }
 
-  const advisory = await chooseAdvisory(parsed.packageName, latestVersion, manualCve);
-  const slug = sanitizePackageKey(`${parsed.packageName}-${latestVersion}`);
+  const slug = sanitizePackageKey(`${parsed.packageName}-${selectedVersion}`);
   const { workspaceDir, packageDir } = await createWorkspaceFromArchive({
     slug,
     artifactUrl: versionMeta.dist.tarball,
-    archiveType: 'tgz'
+    archiveType: 'tgz',
+    reportStatus
   });
 
   const packageJsonPath = path.join(packageDir, 'package.json');
   const packageJson = JSON.parse(await fsp.readFile(packageJsonPath, 'utf8'));
+  if (reportStatus) {
+    await reportStatus({
+      phase: 'source',
+      message: `Selecting the highest-confidence source file in ${parsed.packageName}`,
+      progress: 84,
+      packageName: parsed.packageName
+    });
+  }
   const sourcePath = await chooseSourceFile(packageDir, packageJson, advisory);
 
   return {
     packageName: parsed.packageName,
-    version: latestVersion,
+    version: selectedVersion,
     workspaceDir,
     packageDir,
     packageJson,
@@ -355,7 +624,16 @@ async function buildNpmTarget(parsed, manualCve) {
   };
 }
 
-async function buildGitHubTarget(parsed, manualCve) {
+async function buildGitHubTarget(parsed, manualCve, reportStatus) {
+  if (reportStatus) {
+    await reportStatus({
+      phase: 'metadata',
+      message: `Fetching GitHub metadata for ${parsed.owner}/${parsed.repo}`,
+      progress: 18,
+      packageName: parsed.displayName,
+      inputKind: 'github'
+    });
+  }
   const repoMeta = await fetchJson(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}`, {
     headers: { 'User-Agent': 'Project-Praetorian', 'Accept': 'application/vnd.github+json' }
   });
@@ -365,7 +643,8 @@ async function buildGitHubTarget(parsed, manualCve) {
   const { workspaceDir, packageDir } = await createWorkspaceFromArchive({
     slug,
     artifactUrl: zipUrl,
-    archiveType: 'zip'
+    archiveType: 'zip',
+    reportStatus
   });
 
   const packageJsonPath = path.join(packageDir, 'package.json');
@@ -375,61 +654,154 @@ async function buildGitHubTarget(parsed, manualCve) {
     : { name: parsed.repo, version: defaultBranch };
   const inferredPackageName = packageJson.name || parsed.repo;
   const inferredVersion = packageJson.version || defaultBranch;
+  if (reportStatus) {
+    await reportStatus({
+      phase: 'advisory',
+      message: `Looking up advisory context for ${inferredPackageName}@${inferredVersion}`,
+      progress: 28,
+      packageName: inferredPackageName
+    });
+  }
   const advisory = await chooseAdvisory(packageJson.name || '', inferredVersion, manualCve);
-  const sourcePath = await chooseSourceFile(packageDir, packageJson, advisory);
+  const vulnerableSnapshot = await resolveGitHubVulnerableSnapshot(parsed, advisory, reportStatus).catch(() => null);
+
+  let activeWorkspaceDir = workspaceDir;
+  let activePackageDir = packageDir;
+  let activePackageJson = packageJson;
+
+  if (vulnerableSnapshot && vulnerableSnapshot.parentSha) {
+    const vulnerableSlug = sanitizePackageKey(`${parsed.owner}-${parsed.repo}-${vulnerableSnapshot.parentSha.slice(0, 12)}`);
+    const vulnerableWorkspace = await createWorkspaceFromArchive({
+      slug: vulnerableSlug,
+      artifactUrl: vulnerableSnapshot.artifactUrl,
+      archiveType: 'zip',
+      reportStatus
+    });
+    activeWorkspaceDir = vulnerableWorkspace.workspaceDir;
+    activePackageDir = vulnerableWorkspace.packageDir;
+
+    const vulnerablePackageJsonPath = path.join(activePackageDir, 'package.json');
+    const hasVulnerablePackageJson = await fileExists(vulnerablePackageJsonPath);
+    activePackageJson = hasVulnerablePackageJson
+      ? JSON.parse(await fsp.readFile(vulnerablePackageJsonPath, 'utf8'))
+      : packageJson;
+  }
+
+  if (reportStatus) {
+    await reportStatus({
+      phase: 'source',
+      message: `Selecting the highest-confidence source file in ${inferredPackageName}`,
+      progress: 84,
+      packageName: inferredPackageName
+    });
+  }
+  const sourcePath = await chooseSourceFile(activePackageDir, activePackageJson, advisory);
 
   return {
     packageName: inferredPackageName,
-    version: inferredVersion,
-    workspaceDir,
-    packageDir,
-    packageJson,
+    version: vulnerableSnapshot && vulnerableSnapshot.parentSha ? vulnerableSnapshot.parentSha : inferredVersion,
+    workspaceDir: activeWorkspaceDir,
+    packageDir: activePackageDir,
+    packageJson: activePackageJson,
     sourcePath,
     advisory,
     inputKind: 'github',
     repoUrl: repoMeta.html_url || parsed.originalInput,
-    defaultBranch
+    defaultBranch,
+    fixCommitUrl: vulnerableSnapshot && vulnerableSnapshot.fixCommitUrl ? vulnerableSnapshot.fixCommitUrl : null,
+    sourceRef: vulnerableSnapshot && vulnerableSnapshot.parentSha ? vulnerableSnapshot.parentSha : defaultBranch
   };
 }
 
 async function buildCustomTarget({ input, cve }) {
-  const parsed = parsePackageInput(input);
-  const built = parsed.kind === 'github'
-    ? await buildGitHubTarget(parsed, cve)
-    : await buildNpmTarget(parsed, cve);
+  const startedAt = new Date().toISOString();
+  await clearPreparationStatus();
+  const reportStatus = (partial) => writePreparationStatus({
+    startedAt,
+    input,
+    cve: cve || '',
+    target: 'custom',
+    ...partial
+  });
 
-  const advisoryId = cve || built.advisory.id || (Array.isArray(built.advisory.aliases) && built.advisory.aliases[0]) || 'UNSPECIFIED-ADVISORY';
-  const advisoryText = [built.advisory.summary || `Security issue affecting ${built.packageName}.`, '', built.advisory.details || 'No advisory details were returned.'].join('\n');
-  const cvePath = path.join(built.workspaceDir, 'advisory.txt');
-  await fsp.writeFile(cvePath, `${advisoryText}\n`, 'utf8');
+  await reportStatus({
+    phase: 'queued',
+    message: 'Preparing custom target intake',
+    progress: 4
+  });
 
-  const target = {
-    key: 'custom',
-    packageName: built.packageName,
-    packageInput: input,
-    inputKind: built.inputKind,
-    ecosystem: 'npm',
-    cve: advisoryId,
-    severity: severityFromCvss(extractCvssScore(built.advisory)),
-    affectedRange: built.version,
-    vulnerableClass: mapAdvisoryToClass(built.advisory),
-    vulnerableDir: built.packageDir,
-    sourcePath: built.sourcePath,
-    sourceRelPath: path.relative(built.packageDir, built.sourcePath).replace(/\\/g, '/'),
-    cvePath,
-    reportSummary: `\`${advisoryId}\` affects \`${built.packageName}\` around version ${built.version}. This custom target was ingested dynamically from ${built.inputKind} and attached to current advisory context.`,
-    demoButtonLabel: 'Custom Package',
-    dashboardSummary: `Custom package intake for ${built.packageName}. The Interregnum Protocol fetched the target source, attached advisory context, generated exploit and regression harnesses, and ran the same remediation pipeline used for built-in demos.`,
-    dynamic: true,
-    workspaceDir: built.workspaceDir,
-    version: built.version,
-    advisorySummary: built.advisory.summary || '',
-    advisoryDetails: built.advisory.details || '',
-    repoUrl: built.repoUrl || null
-  };
+  try {
+    const parsed = parsePackageInput(input);
+    await reportStatus({
+      phase: 'parsed',
+      message: `Accepted ${parsed.kind === 'github' ? 'GitHub repository' : 'npm package'} input`,
+      progress: 10,
+      packageName: parsed.displayName,
+      inputKind: parsed.kind
+    });
+    const built = parsed.kind === 'github'
+      ? await buildGitHubTarget(parsed, cve, reportStatus)
+      : await buildNpmTarget(parsed, cve, reportStatus);
 
-  await fsp.writeFile(CURRENT_CUSTOM_TARGET_PATH, `${JSON.stringify(target, null, 2)}\n`, 'utf8');
-  return target;
+    const advisoryId = cve || built.advisory.id || (Array.isArray(built.advisory.aliases) && built.advisory.aliases[0]) || 'UNSPECIFIED-ADVISORY';
+    const advisoryText = [built.advisory.summary || `Security issue affecting ${built.packageName}.`, '', built.advisory.details || 'No advisory details were returned.'].join('\n');
+    const cvePath = path.join(built.workspaceDir, 'advisory.txt');
+    await fsp.writeFile(cvePath, `${advisoryText}\n`, 'utf8');
+
+    const target = {
+      key: 'custom',
+      packageName: built.packageName,
+      packageInput: input,
+      inputKind: built.inputKind,
+      ecosystem: 'npm',
+      cve: advisoryId,
+      severity: severityFromCvss(extractCvssScore(built.advisory)),
+      affectedRange: built.version,
+      vulnerableClass: mapAdvisoryToClass(built.advisory),
+      vulnerableDir: built.packageDir,
+      sourcePath: built.sourcePath,
+      sourceRelPath: path.relative(built.packageDir, built.sourcePath).replace(/\\/g, '/'),
+      cvePath,
+      reportSummary: `\`${advisoryId}\` affects \`${built.packageName}\` around version ${built.version}. This custom target was ingested dynamically from ${built.inputKind} and attached to current advisory context.`,
+      demoButtonLabel: 'Custom Package',
+      dashboardSummary: `Custom package intake for ${built.packageName}. The Interregnum Protocol fetched the target source, attached advisory context, generated exploit and regression harnesses, and ran the same remediation pipeline used for built-in demos.`,
+      dynamic: true,
+      workspaceDir: built.workspaceDir,
+      version: built.version,
+      advisorySummary: built.advisory.summary || '',
+      advisoryDetails: built.advisory.details || '',
+      repoUrl: built.repoUrl || null,
+      sourceRef: built.sourceRef || null,
+      fixCommitUrl: built.fixCommitUrl || null
+    };
+
+    await reportStatus({
+      phase: 'target',
+      message: `Finalizing target configuration for ${built.packageName}`,
+      progress: 92,
+      packageName: built.packageName,
+      cve: advisoryId
+    });
+    await fsp.writeFile(CURRENT_CUSTOM_TARGET_PATH, `${JSON.stringify(target, null, 2)}\n`, 'utf8');
+    await reportStatus({
+      phase: 'ready',
+      message: `Custom target ready: ${built.packageName}`,
+      progress: 100,
+      status: 'complete',
+      packageName: built.packageName,
+      cve: advisoryId
+    });
+    return target;
+  } catch (error) {
+    await reportStatus({
+      phase: 'failed',
+      message: String(error && error.message ? error.message : error),
+      progress: 100,
+      status: 'error',
+      error: String(error && error.message ? error.message : error)
+    });
+    throw error;
+  }
 }
 
 async function readCurrentCustomTarget() {
@@ -463,9 +835,13 @@ function readCurrentCustomTargetSync() {
 module.exports = {
   DYNAMIC_ROOT,
   CURRENT_CUSTOM_TARGET_PATH,
+  PREP_STATUS_PATH,
   buildCustomTarget,
   readCurrentCustomTarget,
   readCurrentCustomTargetSync,
+  readPreparationStatus,
+  writePreparationStatus,
+  clearPreparationStatus,
   updateCurrentCustomTargetSource,
   parsePackageInput,
   parseNpmPackageInput(input) {
