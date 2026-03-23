@@ -133,9 +133,9 @@ function findEnclosingFunctionBounds(lines, targetLine) {
   }
 
   return {
-    startLine: Math.max(1, targetLine - 30),
-    endLine: Math.min(lines.length, targetLine + 30),
-    functionName: 'unknown'
+    startLine: Number(targetLine),
+    endLine: Number(targetLine),
+    functionName: 'line-only'
   };
 }
 
@@ -579,6 +579,22 @@ async function patchTarget(options = {}) {
   const model = options.model || DEFAULT_MODEL;
   const analyzerOutput = options.analyzerOutput || (await readAnalyzerOutput(targetKey));
   const sourceCode = options.sourceCode || (await readSourceCode(targetKey));
+
+  if (!Array.isArray(analyzerOutput.dangerous_lines) || analyzerOutput.dangerous_lines.length === 0) {
+    return {
+      target: target.key,
+      package_name: target.packageName,
+      cve: target.cve,
+      strategies: [{ name: 'No-Op', approach: 'No vulnerabilities found.', score: 0, selected: true }],
+      selected_strategy: 'No-Op',
+      reasoning: 'System is clean.',
+      patch_diff: '',
+      patched_code: sourceCode,
+      applied_known_fix_pattern: false,
+      metadata: { attempts: 0, retries_needed: 0, succeeded_on_first_try: true }
+    };
+  }
+
   const adversarialFindings = options.adversarialFindings || [];
   const existingIntel = await readIntelOutput();
   const intelOutput = options.intelOutput || (existingIntel && existingIntel.package === target.packageName

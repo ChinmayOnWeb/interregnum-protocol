@@ -103,7 +103,12 @@ function executeDynamicScript(script, modulePath, options = {}) {
   const previousMod = globalThis.mod;
   const previousAssert = globalThis.assert;
   const previousHelpers = globalThis.helpers;
-  globalThis.mod = requireFresh(modulePath, targetSourcePath === '.' ? '.' : targetSourcePath);
+  try {
+    globalThis.mod = requireFresh(modulePath, targetSourcePath === '.' ? '.' : targetSourcePath);
+  } catch (error) {
+    console.error(`[SAFE_RUNTIME] Failed to load module at ${modulePath}: ${error.message}`);
+    globalThis.mod = {}; // Mock it to prevent crashes in the runner
+  }
   globalThis.assert = assert;
   globalThis.helpers = helpers;
 
