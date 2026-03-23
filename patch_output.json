@@ -1,47 +1,74 @@
 {
-  "target": "request",
-  "package_name": "request",
-  "cve": "CVE-2023-28155",
+  "target": "custom",
+  "package_name": "mixin-deep",
+  "cve": "0day",
   "strategies": [
     {
-      "name": "Redirect Revalidation",
-      "approach": "Check each redirect target against the allowed protocol list before updating the current request URL.",
+      "name": "Focused Function Patch",
+      "approach": "Enhance the isValidKey function to also exclude symbol keys and keys that are inherited or non-enumerable, and update the mixinDeep function to use Object.keys() instead of for..in to avoid enumerating prototype properties and symbols. Further, validate keys using Object.hasOwnProperty to confirm own properties only, and prevent prototype pollution through all keys by filtering keys explicitly and recursively applying these validations in the mixin function.",
       "score_breakdown": {
         "minimality": 24,
-        "safety": 25,
-        "convention_match": 23,
-        "side_effect_risk": 24
+        "safety": 24,
+        "convention_match": 24,
+        "side_effect_risk": 23
       },
-      "score": 96,
+      "score": 95,
       "selected": true
     },
     {
-      "name": "Disable Cross-Protocol Redirects",
-      "approach": "Record the initial protocol and reject any redirect that changes protocols, regardless of the allowlist.",
+      "name": "Strategy B",
+      "approach": "No approach provided.",
       "score_breakdown": {
-        "minimality": 20,
-        "safety": 23,
-        "convention_match": 21,
-        "side_effect_risk": 20
+        "minimality": 0,
+        "safety": 0,
+        "convention_match": 0,
+        "side_effect_risk": 0
       },
-      "score": 84,
+      "score": 0,
       "selected": false
     },
     {
-      "name": "Pre-Normalize Redirect Chain",
-      "approach": "Normalize and pre-screen the entire redirect chain before any redirect is followed.",
+      "name": "Strategy C",
+      "approach": "No approach provided.",
       "score_breakdown": {
-        "minimality": 15,
-        "safety": 22,
-        "convention_match": 16,
-        "side_effect_risk": 18
+        "minimality": 0,
+        "safety": 0,
+        "convention_match": 0,
+        "side_effect_risk": 0
       },
-      "score": 71,
+      "score": 0,
       "selected": false
     }
   ],
-  "selected_strategy": "Redirect Revalidation",
-  "reasoning": "Highest combined score. It is the smallest behavior-preserving patch that closes the redirect validation gap without rewriting the request flow.",
-  "patch_diff": "--- a/index.js\n+++ b/index.js\n@@\n   let current = config.url;\n \n   for (const redirectUrl of config.redirects) {\n+    if (!isAllowedProtocol(redirectUrl, config.allowedProtocols)) {\n+      return {\n+        ok: false,\n+        blocked: true,\n+        reason: 'redirect protocol blocked',\n+        finalUrl: current,\n+        blockedUrl: redirectUrl\n+      };\n+    }\n+\n     current = redirectUrl;\n   }\n",
-  "patched_code": "'use strict';\n\nfunction getProtocol(rawUrl) {\n  return new URL(rawUrl).protocol;\n}\n\nfunction isAllowedProtocol(rawUrl, allowedProtocols) {\n  return allowedProtocols.includes(getProtocol(rawUrl));\n}\n\nfunction request(options) {\n  const config = Object.assign(\n    {\n      url: '',\n      redirects: [],\n      allowedProtocols: ['https:']\n    },\n    options || {}\n  );\n\n  if (!isAllowedProtocol(config.url, config.allowedProtocols)) {\n    return {\n      ok: false,\n      blocked: true,\n      reason: 'initial protocol blocked',\n      finalUrl: config.url\n    };\n  }\n\n  let current = config.url;\n\n  for (const redirectUrl of config.redirects) {\n    if (!isAllowedProtocol(redirectUrl, config.allowedProtocols)) {\n      return {\n        ok: false,\n        blocked: true,\n        reason: 'redirect protocol blocked',\n        finalUrl: current,\n        blockedUrl: redirectUrl\n      };\n    }\n\n    current = redirectUrl;\n  }\n\n  return {\n    ok: true,\n    blocked: false,\n    finalUrl: current\n  };\n}\n\nmodule.exports = request;\n"
+  "selected_strategy": "Focused Function Patch",
+  "reasoning": "Prototype pollution vulnerabilities often arise from untrusted keys inherited through the prototype chain or symbol keys that can be used to manipulate Object.prototype or other internal JS objects. The original code only filtered three string keys in isValidKey and iterated with for..in which enumerates enumerable properties in the prototype chain including potential symbol keys. Switching to Object.keys() limits to own enumerable string keys, while ignoring symbols. Extending isValidKey to reject symbols and confirming keys as own properties prevents indirect contamination. These combined changes broadly secure the merge process from prototype pollution at every nested level.",
+  "patch_diff": "--- a/index.js\n+++ b/index.js\n@@ -1,38 +1,39 @@\n-'use strict';\n-\n-const isObject = val => {\n-  return typeof val === 'function' || (typeof val === 'object' && val !== null && !Array.isArray(val));\n-};\n-\n-const isValidKey = key => {\n-  return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';\n-};\n-\n-const mixinDeep = (target, ...rest) => {\n-  for (let obj of rest) {\n-    if (isObject(obj)) {\n-      for (let key in obj) {\n-        if (isValidKey(key)) {\n-          mixin(target, obj[key], key);\n-        }\n-      }\n-    }\n-  }\n-  return target;\n-};\n-\n-function mixin(target, val, key) {\n-  let obj = target[key];\n-  if (isObject(val) && isObject(obj)) {\n-    mixinDeep(obj, val);\n-  } else {\n-    target[key] = val;\n-  }\n-}\n-\n-/**\n- * Expose mixinDeep\n- * @type {Function}\n- */\n-\n-module.exports = mixinDeep;\n+'use strict';\n+\n+const isObject = val => {\n+  return typeof val === 'function' || (typeof val === 'object' && val !== null && !Array.isArray(val));\n+};\n+\n+const isValidKey = key => {\n+  // Disallow dangerous keys and symbols to prevent prototype pollution\n+  if (typeof key === 'symbol') return false;\n+  return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';\n+};\n+\n+const mixinDeep = (target, ...rest) => {\n+  for (let obj of rest) {\n+    if (isObject(obj)) {\n+      // Use Object.keys to iterate own enumerable string keys only\n+      for (let key of Object.keys(obj)) {\n+        if (isValidKey(key) && Object.prototype.hasOwnProperty.call(obj, key)) {\n+          mixin(target, obj[key], key);\n+        }\n+      }\n+    }\n+  }\n+  return target;\n+};\n+\n+function mixin(target, val, key) {\n+  // Only proceed if key is valid to avoid prototype pollution\n+  if (!isValidKey(key)) {\n+    return;\n+  }\n+\n+  let obj = target[key];\n+  if (isObject(val) && isObject(obj)) {\n+    mixinDeep(obj, val);\n+  } else {\n+    target[key] = val;\n+  }\n+}",
+  "patched_code": "'use strict';\n\nconst isObject = val => {\n  return typeof val === 'function' || (typeof val === 'object' && val !== null && !Array.isArray(val));\n};\n\nconst isValidKey = key => {\n  // Disallow dangerous keys and symbols to prevent prototype pollution\n  if (typeof key === 'symbol') return false;\n  return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';\n};\n\nconst mixinDeep = (target, ...rest) => {\n  for (let obj of rest) {\n    if (isObject(obj)) {\n      // Use Object.keys to iterate own enumerable string keys only\n      for (let key of Object.keys(obj)) {\n        if (isValidKey(key) && Object.prototype.hasOwnProperty.call(obj, key)) {\n          mixin(target, obj[key], key);\n        }\n      }\n    }\n  }\n  return target;\n};\n\nfunction mixin(target, val, key) {\n  // Only proceed if key is valid to avoid prototype pollution\n  if (!isValidKey(key)) {\n    return;\n  }\n\n  let obj = target[key];\n  if (isObject(val) && isObject(obj)) {\n    mixinDeep(obj, val);\n  } else {\n    target[key] = val;\n  }\n}\n",
+  "patched_function": "'use strict';\n\nconst isObject = val => {\n  return typeof val === 'function' || (typeof val === 'object' && val !== null && !Array.isArray(val));\n};\n\nconst isValidKey = key => {\n  // Disallow dangerous keys and symbols to prevent prototype pollution\n  if (typeof key === 'symbol') return false;\n  return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';\n};\n\nconst mixinDeep = (target, ...rest) => {\n  for (let obj of rest) {\n    if (isObject(obj)) {\n      // Use Object.keys to iterate own enumerable string keys only\n      for (let key of Object.keys(obj)) {\n        if (isValidKey(key) && Object.prototype.hasOwnProperty.call(obj, key)) {\n          mixin(target, obj[key], key);\n        }\n      }\n    }\n  }\n  return target;\n};\n\nfunction mixin(target, val, key) {\n  // Only proceed if key is valid to avoid prototype pollution\n  if (!isValidKey(key)) {\n    return;\n  }\n\n  let obj = target[key];\n  if (isObject(val) && isObject(obj)) {\n    mixinDeep(obj, val);\n  } else {\n    target[key] = val;\n  }\n}",
+  "target_function": "unknown",
+  "target_lines": [
+    1,
+    38
+  ],
+  "applied_known_fix_pattern": false,
+  "metadata": {
+    "attempts": 1,
+    "retries_needed": 0,
+    "succeeded_on_first_try": true,
+    "attempt_log": [
+      {
+        "attempt": 1,
+        "success": true,
+        "reason": "validation passed"
+      }
+    ],
+    "addressed_adversarial_findings": false,
+    "model_attempts": 1,
+    "fallback_used": false,
+    "fallback_reason": "",
+    "fixed_version": null,
+    "fix_commit_url": null,
+    "context_mode": "function-with-context",
+    "warnings": []
+  }
 }

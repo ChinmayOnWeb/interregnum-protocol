@@ -1,0 +1,32 @@
+{
+  "name": "interregnum-protocol",
+  "version": "0.1.0",
+  "description": "Autonomous security remediation for abandoned open-source packages",
+  "main": "run_pipeline.js",
+  "bin": {
+    "interregnum": "./cli.js"
+  },
+  "scripts": {
+    "start": "node dashboard/server.js",
+    "scan": "node run_pipeline.js",
+    "dev": "node dashboard/server.js"
+  },
+  "keywords": [
+    "security",
+    "remediation",
+    "vulnerability",
+    "cve",
+    "supply-chain",
+    "agentic",
+    "ai"
+  ],
+  "author": "Project Praetorian",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "ws": "^8.18.0"
+  }
+}

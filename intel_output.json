@@ -1,50 +1,32 @@
 {
-  "cve": "CVE-2023-28155",
-  "package": "request",
-  "summary": "",
-  "details": "The Request package through 2.88.1 for Node.js allows a bypass of SSRF mitigations via an attacker-controller server that does a cross-protocol redirect (HTTP to HTTPS, or HTTPS to HTTP). NOTE: This vulnerability only affects products that are no longer supported by the maintainer.",
+  "cve": "0day",
+  "package": "moment",
+  "summary": "Hunter Agent found no 0-days in moment.",
+  "details": "The operator supplied 0day. Analyze the codebase and generate the best remediation flow around the supplied package and any independently discovered risks.",
   "severity": {
-    "score": 3.1,
-    "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+    "score": null,
+    "vector": null
   },
-  "cwe": "CWE-918",
-  "cwe_name": "Server-Side Request Forgery (SSRF)",
-  "vulnerable_versions": "<= 2.88.2",
+  "cwe": null,
+  "cwe_name": null,
+  "vulnerable_versions": "2.30.1",
   "fixed_version": null,
   "fix_commit_url": null,
-  "fix_pr_url": "https://github.com/request/request/pull/3444",
+  "fix_pr_url": null,
   "compare_url": null,
   "fix_diff": "",
   "compare_diff": "",
   "fix_files_changed": [],
   "fix_lines_changed": 0,
-  "references": [
-    "https://security.netapp.com/advisory/ntap-20230413-0007/",
-    "https://doyensec.com/resources/Doyensec_Advisory_RequestSSRF_Q12023.pdf",
-    "https://github.com/request/request/issues/3442",
-    "https://github.com/request/request/pull/3444",
-    "https://doyensec.com/resources/Doyensec_Advisory_RequestSSRF_Q12023.pdf",
-    "https://github.com/request/request/issues/3442",
-    "https://github.com/request/request/pull/3444",
-    "https://security.netapp.com/advisory/ntap-20230413-0007/",
-    "https://doyensec.com/resources/Doyensec_Advisory_RequestSSRF_Q12023.pdf",
-    "https://github.com/request/request/issues/3442",
-    "https://github.com/request/request/pull/3444",
-    "https://security.netapp.com/advisory/ntap-20230413-0007/"
-  ],
-  "nvd_description": "The Request package through 2.88.1 for Node.js allows a bypass of SSRF mitigations via an attacker-controller server that does a cross-protocol redirect (HTTP to HTTPS, or HTTPS to HTTP). NOTE: This vulnerability only affects products that are no longer supported by the maintainer.",
+  "references": [],
+  "nvd_description": "",
   "osv_ranges": {
-    "introduced": [
-      "0"
-    ],
+    "introduced": [],
     "fixed": [],
     "ecosystemSpecific": []
   },
   "osv_ecosystem_specific": [],
-  "data_sources": [
-    "osv.dev",
-    "nvd"
-  ],
+  "data_sources": [],
   "notes": [
     "no known fix commit"
   ],

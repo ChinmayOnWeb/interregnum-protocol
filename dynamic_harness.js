@@ -1,8 +1,8 @@
-﻿'use strict';
+'use strict';
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { DEFAULT_MODEL, callOpenAIJson } = require('./openai_client');
+const { DEFAULT_MODEL, callOpenAIJson } = require('./llm_client');
 const { getTargetConfig } = require('./target_config');
 const { executeDynamicScript } = require('./safe_runtime');
 const { createContentSignature, readCachedArtifact, safeReadFile } = require('./cache_utils');
@@ -54,6 +54,7 @@ async function buildHarnessPrompt(target) {
     'helpers.withBlockedNetwork(() => { ... }) blocks outbound DNS, socket, HTTP, and HTTPS calls.',
     'helpers.withPatchedModule(moduleName, replacements, fn) can monkeypatch builtins locally inside a test.',
     'exploit_script must return an object: { vulnerable: boolean }.',
+    'DO NOT wrap the script in a function or use module.exports. Execute logic directly and use a top-level return statement (e.g., `return { vulnerable: true };`).',
     'Each normal test script should throw if the test fails.',
     'Each adversarial script must return an object: { bypassed: boolean }.',
     'Do not use network, child_process, fs writes, or timers.',
@@ -204,7 +205,7 @@ async function generateDynamicHarness(targetKey, model = DEFAULT_MODEL) {
     safeReadFile(path.join(target.vulnerableDir, 'package.json'))
   ]);
   const signature = await createContentSignature([
-    'harness-v2',
+    'harness-v3',
     model,
     target.key,
     target.packageName,

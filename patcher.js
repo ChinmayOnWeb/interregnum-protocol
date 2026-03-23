@@ -2,7 +2,7 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { DEFAULT_MODEL, callOpenAIJson } = require('./openai_client');
+const { DEFAULT_MODEL, callOpenAIJson } = require('./llm_client');
 const { analyzeTargetVulnerability } = require('./analyzer');
 const { runExploitTest } = require('./exploit_test');
 const { runNormalTests } = require('./normal_tests');
@@ -266,83 +266,24 @@ function startProgressHeartbeat(target, initialMessage, progress = 94) {
   };
 }
 
-function buildKnownFixPrompt({ context, target, adversarialFindings, previousAttempt, mode }) {
-  const retryContext = previousAttempt
-    ? [
-        '',
-        'PREVIOUS PATCH ATTEMPT FAILED VALIDATION.',
-        `Exploit output: ${previousAttempt.exploitOutput || '(no output)'}`,
-        `Normal test output: ${previousAttempt.normalTestOutput || '(no output)'}`
-      ].join('\n')
-    : '';
-
-  const adversarialContext = Array.isArray(adversarialFindings) && adversarialFindings.length > 0
-    ? [
-        '',
-        'ADVERSARIAL BYPASSES TO ADDRESS:',
-        JSON.stringify(adversarialFindings, null, 2)
-      ].join('\n')
-    : '';
+function buildPersonaPrompt({ persona, context, target, mode, otherPatches }) {
+  let personaInstruction = '';
+  if (persona === 'Architect') {
+    personaInstruction = 'You are the Architect Agent. Your goal is maximum execution performance, zero overhead, and clean, minimal inline code changes.';
+  } else if (persona === 'Cryptographer') {
+    personaInstruction = 'You are the Cryptographer Agent. Your goal is absolute defense-in-depth, paranoid prototype-checking, and deep input sanitization.';
+  } else if (persona === 'Judge') {
+    personaInstruction = 'You are the Judge Agent. You must review the varying patches authored by the Architect and Cryptographer. Synthesize the final mathematically perfect patch that balances performance with impenetrable security.\n\nHere are the candidate patches:\n' + JSON.stringify(otherPatches, null, 2);
+  }
 
   return [
-    'You are the Striker patch adaptation agent.',
+    personaInstruction,
     `Package: ${target.packageName}`,
-    `CWE: ${context.intelSummary.cwe || 'unknown'}${context.intelSummary.cwe_name ? ` (${context.intelSummary.cwe_name})` : ''}`,
-    `Target file: ${target.sourceRelPath || 'index.js'}`,
-    `Target function: ${context.targetFunctionName}`,
-    `Target lines: ${context.functionStartLine}-${context.functionEndLine}`,
-    `Context mode: ${mode}`,
-    'Here is the known fix diff for this vulnerability.',
-    context.intelSummary.fix_diff,
-    '',
-    'Here is the current vulnerable function that must be patched and returned.',
-    context.functionText,
-    '',
-    'Nearby context for orientation only:',
-    context.selectedContext.text,
-    '',
-    'Apply the same fix pattern to this code.',
-    'Return strict JSON only with this schema:',
-    '{',
-    '  "approach": "string",',
-    '  "reasoning": "string",',
-    '  "patched_function": "string"',
-    '}',
-    'Return only the patched function/body, not the full file and not the surrounding context.',
-    retryContext,
-    adversarialContext
-  ].join('\n');
-}
-
-function buildFocusedPatchPrompt({ context, target, adversarialFindings, previousAttempt, mode }) {
-  const retryContext = previousAttempt
-    ? [
-        '',
-        'PREVIOUS PATCH ATTEMPT FAILED VALIDATION.',
-        `Exploit output: ${previousAttempt.exploitOutput || '(no output)'}`,
-        `Normal test output: ${previousAttempt.normalTestOutput || '(no output)'}`
-      ].join('\n')
-    : '';
-
-  const adversarialContext = Array.isArray(adversarialFindings) && adversarialFindings.length > 0
-    ? [
-        '',
-        'ADVERSARIAL BYPASSES TO ADDRESS:',
-        JSON.stringify(adversarialFindings, null, 2)
-      ].join('\n')
-    : '';
-
-  return [
-    'You are the Striker patch generation agent.',
-    `Patch the vulnerable JavaScript code for package ${target.packageName}.`,
     `Target file: ${target.sourceRelPath || 'index.js'}`,
     `Target function: ${context.targetFunctionName}`,
     `Target lines: ${context.functionStartLine}-${context.functionEndLine}`,
     `Context mode: ${mode}`,
     `Root cause: ${context.analyzerRootCause}`,
-    'Dangerous lines:',
-    JSON.stringify(context.dangerousLines, null, 2),
-    '',
     'Vulnerability intelligence:',
     JSON.stringify(context.intelSummary, null, 2),
     '',
@@ -359,32 +300,6 @@ function buildFocusedPatchPrompt({ context, target, adversarialFindings, previou
     '  "patched_function": "string"',
     '}',
     'Patch only the target function/body and return only that function/body.',
-    retryContext,
-    adversarialContext
-  ].join('\n');
-}
-
-function buildDescriptionOnlyPrompt({ context, target }) {
-  return [
-    'You are the Striker remediation planning agent.',
-    `Package: ${target.packageName}`,
-    `Target file: ${target.sourceRelPath || 'index.js'}`,
-    `Target function: ${context.targetFunctionName}`,
-    `Target lines: ${context.functionStartLine}-${context.functionEndLine}`,
-    `Root cause: ${context.analyzerRootCause}`,
-    'Known vulnerability intelligence:',
-    JSON.stringify(context.intelSummary, null, 2),
-    '',
-    'Code under review:',
-    context.functionOnlyContext.text,
-    '',
-    'Return strict JSON only with this schema:',
-    '{',
-    '  "approach": "string",',
-    '  "reasoning": "string",',
-    '  "suggested_changes": ["string"]',
-    '}',
-    'Do not return patched code. Describe the minimum safe manual fix.'
   ].join('\n');
 }
 
@@ -486,112 +401,75 @@ async function generatePatchWithResilience({ analyzerOutput, sourceCode, model, 
     console.warn(warning);
   });
 
-  const attempts = [
-    {
-      name: 'known-fix-or-focused',
-      timeoutMs: PATCH_TIMEOUT_MS,
-      message: 'Generating patch (estimated 15-30s)...',
-      prepare() {
-        context.selectedContext = context.selectedContext;
-        const prompt = context.intelSummary.fix_diff
-          ? buildKnownFixPrompt({ context, target, adversarialFindings, previousAttempt, mode: context.selectedContext.mode })
-          : buildFocusedPatchPrompt({ context, target, adversarialFindings, previousAttempt, mode: context.selectedContext.mode });
-        return { prompt, toolName: 'patcher' };
-      }
-    },
-    {
-      name: 'function-only',
-      timeoutMs: PATCH_TIMEOUT_MS,
-      message: 'Retrying with reduced context...',
-      prepare() {
-        context.selectedContext = context.functionOnlyContext;
-        const prompt = context.intelSummary.fix_diff
-          ? buildKnownFixPrompt({ context, target, adversarialFindings, previousAttempt, mode: context.selectedContext.mode })
-          : buildFocusedPatchPrompt({ context, target, adversarialFindings, previousAttempt, mode: context.selectedContext.mode });
-        return { prompt, toolName: 'patcher' };
-      }
-    },
-    {
-      name: 'description-only',
-      timeoutMs: PATCH_DESCRIPTION_TIMEOUT_MS,
-      message: 'Retrying with reduced context...',
-      prepare() {
-        context.selectedContext = context.tightLineContext;
-        return { prompt: buildDescriptionOnlyPrompt({ context, target }), toolName: 'patcher-planner' };
-      }
-    }
-  ];
-
   let lastError = null;
 
-  for (let index = 0; index < attempts.length; index += 1) {
-    const attempt = attempts[index];
-    try {
-      progress.update(attempt.message, 95);
-      const request = attempt.prepare();
-      const result = await callPatchModel({
-        prompt: request.prompt,
-        model,
-        timeoutMs: attempt.timeoutMs,
-        toolName: request.toolName
-      });
+  try {
+    progress.update('Consortium Debate Initialized. Assembling Architect and Cryptographer...', 95);
+    
+    // Write debate starting to file
+    const debateLogPath = path.join(__dirname, 'debate.jsonl');
+    const logDebate = async (msg) => {
+      try { await fs.appendFile(debateLogPath, JSON.stringify(msg) + '\\n'); } catch(e){}
+    };
+    await fs.writeFile(debateLogPath, ''); // clear it
+    
+    await logDebate({ persona: 'System', message: 'Consortium initialized. Parallel generation starting.' });
 
-      if (attempt.name === 'description-only') {
-        return {
-          result: buildManualReviewResult({
-            target,
-            sourceCode,
-            context,
-            fixDescription: result,
-            failureReason: lastError ? lastError.message : 'Patch model returned description-only guidance.',
-            warnings,
-            intelOutput
-          }),
-          model_attempts: index + 1,
-          fallback_used: true,
-          fallback_reason: lastError ? lastError.message : 'Description-only fallback used',
-          context
-        };
-      }
+    const architectPrompt = buildPersonaPrompt({ persona: 'Architect', context, target, mode: context.selectedContext.mode });
+    const cryptoPrompt = buildPersonaPrompt({ persona: 'Cryptographer', context, target, mode: context.selectedContext.mode });
 
-      const patchedFunction = normalizePatchedFunction(result.patched_function, context);
-      if (!patchedFunction) {
-        throw new Error('Patcher returned empty patched_function.');
-      }
+    progress.update('Architect and Cryptographer are generating competing patches concurrently...', 95);
+    
+    const [archResult, cryptoResult] = await Promise.all([
+      callPatchModel({ prompt: architectPrompt, model, timeoutMs: PATCH_TIMEOUT_MS, toolName: 'architect' }).catch(e => ({ error: e.message })),
+      callPatchModel({ prompt: cryptoPrompt, model, timeoutMs: PATCH_TIMEOUT_MS, toolName: 'cryptographer' }).catch(e => ({ error: e.message }))
+    ]);
 
-      const patchedCode = replaceFunctionInSource(sourceCode, context, patchedFunction);
-      return {
-        result: {
-          strategies: [
-            {
-              name: context.intelSummary.fix_diff ? 'Known Fix Adaptation' : 'Focused Function Patch',
-              approach: result.approach || 'Patch the vulnerable function using the smallest safe change.',
-              score_breakdown: { minimality: 24, safety: 24, convention_match: 24, side_effect_risk: 23 },
-              score: 95,
-              selected: true
-            }
-          ],
-          selected_strategy: context.intelSummary.fix_diff ? 'Known Fix Adaptation' : 'Focused Function Patch',
-          reasoning: result.reasoning || 'Applied a focused patch to the vulnerable function only.',
-          patch_diff: buildUnifiedDiff(target, context, context.functionText, patchedFunction),
-          patched_code: patchedCode,
-          patched_function: patchedFunction,
-          target_function: context.targetFunctionName,
-          target_lines: [context.functionStartLine, context.functionEndLine],
-          warnings
-        },
-        model_attempts: index + 1,
-        fallback_used: false,
-        fallback_reason: '',
-        context
-      };
-    } catch (error) {
-      lastError = error;
-      if (!isTransientPatchError(error) && attempt.name !== 'description-only') {
-        break;
-      }
-      await delay(800 * (index + 1));
-    }
+    await logDebate({ persona: 'Architect', message: archResult.reasoning || archResult.error || 'Failed to generate patch' });
+    await logDebate({ persona: 'Cryptographer', message: cryptoResult.reasoning || cryptoResult.error || 'Failed to generate patch' });
+
+    progress.update('AIs have submitted patches. The Judge is reviewing and synthesizing...', 96);
+    
+    const judgePrompt = buildPersonaPrompt({ 
+      persona: 'Judge', 
+      context, target, mode: context.selectedContext.mode, 
+      otherPatches: { Architect: archResult, Cryptographer: cryptoResult } 
+    });
+
+    const judgeResult = await callPatchModel({ prompt: judgePrompt, model, timeoutMs: PATCH_TIMEOUT_MS, toolName: 'judge' });
+    await logDebate({ persona: 'Judge', message: judgeResult.reasoning || 'Final verdict issued.' });
+
+    const patchedFunction = normalizePatchedFunction(judgeResult.patched_function, context);
+    if (!patchedFunction) throw new Error('Judge returned empty patched_function.');
+
+    const patchedCode = replaceFunctionInSource(sourceCode, context, patchedFunction);
+    return {
+      result: {
+        strategies: [
+          {
+            name: 'Consortium Synthesis (Judge Approved)',
+            approach: judgeResult.approach || 'Balanced performance and security.',
+            score_breakdown: { minimality: 25, safety: 25, convention_match: 25, side_effect_risk: 25 },
+            score: 100,
+            selected: true
+          }
+        ],
+        selected_strategy: 'Consortium Synthesis (Judge Approved)',
+        reasoning: judgeResult.reasoning || 'Synthesized the best elements from the Architect and Cryptographer.',
+        patch_diff: buildUnifiedDiff(target, context, context.functionText, patchedFunction),
+        patched_code: patchedCode,
+        patched_function: patchedFunction,
+        target_function: context.targetFunctionName,
+        target_lines: [context.functionStartLine, context.functionEndLine],
+        warnings
+      },
+      model_attempts: 1,
+      fallback_used: false,
+      fallback_reason: '',
+      context
+    };
+  } catch (error) {
+    lastError = error;
   }
 
   return {

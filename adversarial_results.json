@@ -1,59 +1,17 @@
 {
-  "target": "request",
-  "package_name": "request",
-  "cve": "CVE-2023-28155",
+  "target": "custom",
+  "package_name": "mixin-deep",
+  "cve": "0day",
   "patch_diff_reviewed": true,
   "attempts": [
     {
-      "bypass_name": "https to http redirect",
-      "payload": "{ url: \"https://public.example\", redirects: [\"http://169.254.169.254/latest/meta-data\"] }",
-      "result": "BLOCKED",
-      "severity": "none"
-    },
-    {
-      "bypass_name": "double redirect ending in http",
-      "payload": "{ redirects: [\"https://edge.example\", \"http://169.254.169.254/latest/meta-data\"] }",
-      "result": "BLOCKED",
-      "severity": "none"
-    },
-    {
-      "bypass_name": "uppercase protocol redirect",
-      "payload": "{ redirects: [\"HTTP://169.254.169.254/latest/meta-data\"] }",
-      "result": "BLOCKED",
-      "severity": "none"
-    },
-    {
-      "bypass_name": "redirect to localhost metadata endpoint",
-      "payload": "{ redirects: [\"http://127.0.0.1/admin\"] }",
-      "result": "BLOCKED",
-      "severity": "none"
-    },
-    {
-      "bypass_name": "mixed redirect chain",
-      "payload": "{ redirects: [\"https://cdn.example\", \"http://internal.example/private\"] }",
-      "result": "BLOCKED",
-      "severity": "none"
-    },
-    {
-      "bypass_name": "array redirect to link local",
-      "payload": "{ redirects: [\"http://169.254.169.254/latest\"] }",
-      "result": "BLOCKED",
-      "severity": "none"
-    },
-    {
-      "bypass_name": "redirect after safe hop",
-      "payload": "{ redirects: [\"https://safe.example\", \"http://10.0.0.5/admin\"] }",
-      "result": "BLOCKED",
-      "severity": "none"
-    },
-    {
-      "bypass_name": "redirect to plain http file",
-      "payload": "{ redirects: [\"http://files.example/export\"] }",
+      "bypass_name": "input validation fallback probe",
+      "payload": "{ redirect: true }",
       "result": "BLOCKED",
       "severity": "none"
     }
   ],
-  "adversarial_tests_run": 8,
+  "adversarial_tests_run": 1,
   "bypasses_found": 0,
   "patch_resilience_score": "100%",
   "verdict": "HARDENED",

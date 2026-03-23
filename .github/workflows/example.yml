@@ -1,0 +1,32 @@
+name: Interregnum Protocol — Example
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM UTC
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'npm package name or GitHub repo URL'
+        required: true
+        default: 'mixin-deep'
+      cve:
+        description: 'CVE identifier (optional)'
+        required: false
+
+jobs:
+  remediate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Interregnum Protocol
+        uses: ChinmayOnWeb/interregnum-protocol@main
+        with:
+          package: ${{ github.event.inputs.package || 'mixin-deep' }}
+          cve: ${{ github.event.inputs.cve || '' }}
+          provider: openai
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

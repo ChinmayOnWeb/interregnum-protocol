@@ -1,17 +1,17 @@
 {
-  "target": "request",
-  "package_name": "request",
-  "cve": "CVE-2023-28155",
-  "generated_at": "2026-03-19T19:06:44.729Z",
-  "patch_quality_score": 83,
+  "target": "custom",
+  "package_name": "mixin-deep",
+  "cve": "0day",
+  "generated_at": "2026-03-22T20:48:30.755Z",
+  "patch_quality_score": 42,
   "patch_quality_breakdown": {
     "lines_changed": {
-      "points": 14,
+      "points": 0,
       "max_points": 20,
-      "changed_lines": 10
+      "changed_lines": 77
     },
     "convention_match": {
-      "points": 9,
+      "points": 12,
       "max_points": 20
     },
     "no_new_dependencies": {
@@ -19,7 +19,7 @@
       "max_points": 10
     },
     "vulnerability_fully_blocked": {
-      "points": 30,
+      "points": 0,
       "max_points": 30
     },
     "no_test_regressions": {
@@ -27,35 +27,35 @@
       "max_points": 20
     }
   },
-  "speed_score": 95,
+  "speed_score": 78,
   "speed": {
-    "total_pipeline_time_ms": 8916,
-    "total_pipeline_time_seconds": 8.92,
+    "total_pipeline_time_ms": 24017,
+    "total_pipeline_time_seconds": 24.02,
     "per_agent_step_ms": [
       {
         "agent": "intel",
-        "duration_ms": 839,
-        "duration_seconds": 0.84
+        "duration_ms": 240,
+        "duration_seconds": 0.24
       },
       {
         "agent": "scout",
-        "duration_ms": 1615,
-        "duration_seconds": 1.61
+        "duration_ms": 2730,
+        "duration_seconds": 2.73
       },
       {
         "agent": "Analyzer",
-        "duration_ms": 2970,
-        "duration_seconds": 2.97
+        "duration_ms": 5699,
+        "duration_seconds": 5.7
       },
       {
         "agent": "Patcher",
-        "duration_ms": 3459,
-        "duration_seconds": 3.46
+        "duration_ms": 15273,
+        "duration_seconds": 15.27
       },
       {
         "agent": "Verifier",
-        "duration_ms": 12,
-        "duration_seconds": 0.01
+        "duration_ms": 28,
+        "duration_seconds": 0.03
       },
       {
         "agent": "Adversarial Tester",
@@ -75,7 +75,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 839,
+        "duration_ms": 240,
         "error": null
       },
       {
@@ -84,7 +84,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 1615,
+        "duration_ms": 2730,
         "error": null
       },
       {
@@ -93,7 +93,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 2970,
+        "duration_ms": 5699,
         "error": null
       },
       {
@@ -102,7 +102,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 3459,
+        "duration_ms": 15273,
         "error": null
       },
       {
@@ -111,7 +111,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 12,
+        "duration_ms": 28,
         "error": null
       },
       {
@@ -126,34 +126,34 @@
     ]
   },
   "adversarial": {
-    "adversarial_tests_run": 8,
+    "adversarial_tests_run": 1,
     "bypasses_found": 0,
     "patch_resilience_score": "100%",
     "verdict": "HARDENED"
   },
   "verification_snapshot": {
     "exploit_before": {
-      "ok": true,
-      "polluted": true,
-      "output": "VULNERABLE: cross-protocol redirect bypass confirmed"
+      "ok": false,
+      "polluted": false,
+      "output": "SAFE: target-specific exploit harness unavailable (Failed to parse JSON output from openai: Unexpected token '\\', ...\"payload\": \\\"{ safe: \"... is not valid JSON\nRaw output:\n{\n  \"exploit_script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nhelpers.withBlockedNetwork(() => {\\n  try {\\n    const obj = {};\\n    const payload = { __proto__: { admin: true } };\\n    const result = mixinDeep({}, payload);\\n    // If prototype was polluted, admin would be true on new objects\\n    const polluted = {}.admin === true || Boolean(obj.admin) === true || Object.prototype.admin === true;\\n    return { vulnerable: polluted };\\n  } catch (err) {\\n    return { vulnerable: false };\\n  }\\n});\",\n  \"exploit_success_message\": \"Prototype pollution vulnerability detected: __proto__ property modified on the global prototype chain.\",\n  \"exploit_failure_message\": \"No prototype pollution vulnerability detected with __proto__ property. Input validation on keys is effective.\",\n  \"normal_tests\": [\n    {\n      \"name\": \"Basic Object Merge\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst target = { a: { b: 1 }};\\nconst source = { a: { c: 2 }, d: 3 };\\nconst expected = { a: { b: 1, c: 2 }, d: 3 };\\nconst result = mixinDeep(target, source);\\nassert.deepStrictEqual(result, expected);\\n\"\n    },\n    {\n      \"name\": \"Array Property Overwrite\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst target = { arr: [1, 2, 3] };\\nconst source = { arr: [4, 5] };\\nconst result = mixinDeep(target, source);\\nassert.deepStrictEqual(result.arr, [4, 5]);\\n\"\n    },\n    {\n      \"name\": \"Function Property Copy\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nfunction fn() { return 42; }\\nconst target = {};\\nconst source = { method: fn };\\nconst result = mixinDeep(target, source);\\nassert.strictEqual(typeof result.method, 'function');\\nassert.strictEqual(result.method(), 42);\\n\"\n    }\n  ],\n  \"adversarial_attempts\": [\n    {\n      \"bypass_name\": \"Using constructor key\",\n      \"payload\": \"{ constructor: { prototype: { hacked: true } } }\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst payload = { constructor: { prototype: { hacked: true } } };\\nconst target = {};\\nconst result = mixinDeep(target, payload);\\nconst bypassed = ({}).hacked === true || Object.prototype.hacked === true || target.constructor && target.constructor.prototype && target.constructor.prototype.hacked === true;\\nreturn { bypassed };\\n\"\n    },\n    {\n      \"bypass_name\": \"Using prototype key\",\n      \"payload\": \"{ prototype: { evil: true } }\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst payload = { prototype: { evil: true } };\\nconst target = {};\\nconst result = mixinDeep(target, payload);\\nconst bypassed = ({}).evil === true || Object.prototype.evil === true || target.prototype && target.prototype.evil === true;\\nreturn { bypassed };\\n\"\n    },\n    {\n      \"bypass_name\": \"Using nested __proto__ key\",\n      \"payload\": \\\"{ safe: { __proto__: { attacked: true } } }\\\",\\n      \\\"script\\\": \\\"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\\\nconst payload = { safe: { __proto__: { attacked: true } } };\\\\nconst target = {};\\\\nconst result = mixinDeep(target, payload);\\\\nconst attacked = ({}).attacked === true || Object.prototype.attacked === true;\\\\nreturn { bypassed: attacked };\\\\n\\\"\"\n    }\n  ]\n}); manual review required"
     },
     "exploit_after": {
       "ok": true,
       "polluted": false,
-      "output": "SAFE: redirect bypass blocked"
+      "output": "SAFE: target-specific exploit harness unavailable (Failed to parse JSON output from openai: Unexpected token '\\', ...\"payload\": \\\"{ safe: \"... is not valid JSON\nRaw output:\n{\n  \"exploit_script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nhelpers.withBlockedNetwork(() => {\\n  try {\\n    const obj = {};\\n    const payload = { __proto__: { admin: true } };\\n    const result = mixinDeep({}, payload);\\n    // If prototype was polluted, admin would be true on new objects\\n    const polluted = {}.admin === true || Boolean(obj.admin) === true || Object.prototype.admin === true;\\n    return { vulnerable: polluted };\\n  } catch (err) {\\n    return { vulnerable: false };\\n  }\\n});\",\n  \"exploit_success_message\": \"Prototype pollution vulnerability detected: __proto__ property modified on the global prototype chain.\",\n  \"exploit_failure_message\": \"No prototype pollution vulnerability detected with __proto__ property. Input validation on keys is effective.\",\n  \"normal_tests\": [\n    {\n      \"name\": \"Basic Object Merge\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst target = { a: { b: 1 }};\\nconst source = { a: { c: 2 }, d: 3 };\\nconst expected = { a: { b: 1, c: 2 }, d: 3 };\\nconst result = mixinDeep(target, source);\\nassert.deepStrictEqual(result, expected);\\n\"\n    },\n    {\n      \"name\": \"Array Property Overwrite\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst target = { arr: [1, 2, 3] };\\nconst source = { arr: [4, 5] };\\nconst result = mixinDeep(target, source);\\nassert.deepStrictEqual(result.arr, [4, 5]);\\n\"\n    },\n    {\n      \"name\": \"Function Property Copy\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nfunction fn() { return 42; }\\nconst target = {};\\nconst source = { method: fn };\\nconst result = mixinDeep(target, source);\\nassert.strictEqual(typeof result.method, 'function');\\nassert.strictEqual(result.method(), 42);\\n\"\n    }\n  ],\n  \"adversarial_attempts\": [\n    {\n      \"bypass_name\": \"Using constructor key\",\n      \"payload\": \"{ constructor: { prototype: { hacked: true } } }\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst payload = { constructor: { prototype: { hacked: true } } };\\nconst target = {};\\nconst result = mixinDeep(target, payload);\\nconst bypassed = ({}).hacked === true || Object.prototype.hacked === true || target.constructor && target.constructor.prototype && target.constructor.prototype.hacked === true;\\nreturn { bypassed };\\n\"\n    },\n    {\n      \"bypass_name\": \"Using prototype key\",\n      \"payload\": \"{ prototype: { evil: true } }\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst payload = { prototype: { evil: true } };\\nconst target = {};\\nconst result = mixinDeep(target, payload);\\nconst bypassed = ({}).evil === true || Object.prototype.evil === true || target.prototype && target.prototype.evil === true;\\nreturn { bypassed };\\n\"\n    },\n    {\n      \"bypass_name\": \"Using nested __proto__ key\",\n      \"payload\": \\\"{ safe: { __proto__: { attacked: true } } }\\\",\\n      \\\"script\\\": \\\"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\\\nconst payload = { safe: { __proto__: { attacked: true } } };\\\\nconst target = {};\\\\nconst result = mixinDeep(target, payload);\\\\nconst attacked = ({}).attacked === true || Object.prototype.attacked === true;\\\\nreturn { bypassed: attacked };\\\\n\\\"\"\n    }\n  ]\n}); manual review required"
     },
     "normal_tests_before": {
       "ok": true,
-      "output": "PASS: allows a direct https request\nPASS: follows same-protocol https redirects\nPASS: blocks an initial disallowed protocol\nPASS: returns the final same-protocol redirect cleanly\nALL NORMAL TESTS PASSED"
+      "output": "PASS: module loads successfully\nPASS: module export surface is accessible\nALL NORMAL TESTS PASSED"
     },
     "normal_tests_after": {
       "ok": true,
-      "output": "PASS: allows a direct https request\nPASS: follows same-protocol https redirects\nPASS: blocks an initial disallowed protocol\nPASS: returns the final same-protocol redirect cleanly\nALL NORMAL TESTS PASSED"
+      "output": "PASS: module loads successfully\nPASS: module export surface is accessible\nALL NORMAL TESTS PASSED"
     }
   },
   "metadata": {
     "analyzer_present": true,
     "patch_present": true,
-    "verified_remediation": true
+    "verified_remediation": false
   }
 }

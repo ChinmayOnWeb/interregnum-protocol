@@ -2,7 +2,7 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { DEFAULT_MODEL, callOpenAIJson } = require('./openai_client');
+const { DEFAULT_MODEL, callOpenAIJson } = require('./llm_client');
 const { getTargetConfig, parseTargetFlag } = require('./target_config');
 const { createContentSignature, readCachedArtifact } = require('./cache_utils');
 

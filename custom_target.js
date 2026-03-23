@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -743,8 +743,30 @@ async function buildCustomTarget({ input, cve }) {
       ? await buildGitHubTarget(parsed, cve, reportStatus)
       : await buildNpmTarget(parsed, cve, reportStatus);
 
-    const advisoryId = cve || built.advisory.id || (Array.isArray(built.advisory.aliases) && built.advisory.aliases[0]) || 'UNSPECIFIED-ADVISORY';
-    const advisoryText = [built.advisory.summary || `Security issue affecting ${built.packageName}.`, '', built.advisory.details || 'No advisory details were returned.'].join('\n');
+    let advisoryId = cve || built.advisory.id || (Array.isArray(built.advisory.aliases) && built.advisory.aliases[0]) || 'UNSPECIFIED-ADVISORY';
+    let advisoryObj = built.advisory;
+    let vulnerableClass = mapAdvisoryToClass(built.advisory);
+    let severityLevel = severityFromCvss(extractCvssScore(built.advisory));
+
+    if (String(cve).toLowerCase() === '0day') {
+      await reportStatus({ phase: 'hunter', message: 'Unleashing Zero-Day Hunter Agent...', progress: 85, packageName: built.packageName });
+      const { unleashHunter } = require('./hunter');
+      const huntResult = await unleashHunter(built.packageDir, built.packageJson.main || 'index.js');
+      if (huntResult && huntResult.success) {
+        advisoryId = 'ZERO-DAY-DISCOVERY';
+        advisoryObj = {
+          summary: `Autonomous 0-Day Discovery in ${built.packageName}`,
+          details: `The Hunter Agent fuzzed the target and discovered a working ${huntResult.vulnerability} exploit using payload: ${huntResult.payload}`,
+          severity: [{ score: 9.8 }]
+        };
+        vulnerableClass = huntResult.vulnerability;
+        severityLevel = 'Critical';
+      } else {
+        advisoryObj.summary = `Hunter Agent found no 0-days in ${built.packageName}.`;
+      }
+    }
+
+    const advisoryText = [advisoryObj.summary || `Security issue affecting ${built.packageName}.`, '', advisoryObj.details || 'No advisory details.'].join('\n');
     const cvePath = path.join(built.workspaceDir, 'advisory.txt');
     await fsp.writeFile(cvePath, `${advisoryText}\n`, 'utf8');
 
@@ -755,21 +777,21 @@ async function buildCustomTarget({ input, cve }) {
       inputKind: built.inputKind,
       ecosystem: 'npm',
       cve: advisoryId,
-      severity: severityFromCvss(extractCvssScore(built.advisory)),
+      severity: severityLevel,
       affectedRange: built.version,
-      vulnerableClass: mapAdvisoryToClass(built.advisory),
+      vulnerableClass: vulnerableClass,
       vulnerableDir: built.packageDir,
       sourcePath: built.sourcePath,
       sourceRelPath: path.relative(built.packageDir, built.sourcePath).replace(/\\/g, '/'),
       cvePath,
-      reportSummary: `\`${advisoryId}\` affects \`${built.packageName}\` around version ${built.version}. This custom target was ingested dynamically from ${built.inputKind} and attached to current advisory context.`,
+      reportSummary: `\`${advisoryId}\` affects \`${built.packageName}\`. Ingested dynamically.`,
       demoButtonLabel: 'Custom Package',
-      dashboardSummary: `Custom package intake for ${built.packageName}. The Interregnum Protocol fetched the target source, attached advisory context, generated exploit and regression harnesses, and ran the same remediation pipeline used for built-in demos.`,
+      dashboardSummary: `Custom intake for ${built.packageName}.`,
       dynamic: true,
       workspaceDir: built.workspaceDir,
       version: built.version,
-      advisorySummary: built.advisory.summary || '',
-      advisoryDetails: built.advisory.details || '',
+      advisorySummary: advisoryObj.summary || '',
+      advisoryDetails: advisoryObj.details || '',
       repoUrl: built.repoUrl || null,
       sourceRef: built.sourceRef || null,
       fixCommitUrl: built.fixCommitUrl || null

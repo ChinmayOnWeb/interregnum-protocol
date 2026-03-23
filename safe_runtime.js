@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -108,8 +108,18 @@ function executeDynamicScript(script, modulePath, options = {}) {
   globalThis.helpers = helpers;
 
   try {
-    const runner = new Function('modulePath', 'helpers', 'assert', 'path', 'URL', script);
-    return runner(modulePath, helpers, assert, path, URL);
+    const fakeModule = { exports: {} };
+    const runner = new Function('modulePath', 'helpers', 'assert', 'path', 'URL', 'module', 'exports', script);
+    let result = runner(modulePath, helpers, assert, path, URL, fakeModule, fakeModule.exports);
+    
+    // Fallback: If the script assigned to module.exports wrapper function instead of returning directly
+    if (result === undefined && typeof fakeModule.exports === 'function') {
+      result = fakeModule.exports(modulePath, helpers, assert, path, URL);
+    } else if (result === undefined && Object.keys(fakeModule.exports).length > 0) {
+      result = fakeModule.exports;
+    }
+    
+    return result;
   } finally {
     globalThis.mod = previousMod;
     globalThis.assert = previousAssert;

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Benchmark | The Interregnum Protocol</title>
+    <meta name="description" content="Remediation benchmark dashboard showing historical run performance across packages." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <div class="ambient ambient-three"></div>
+
+    <header class="topbar shell">
+      <div class="brand-lockup">
+        <a href="/" style="display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit;">
+          <div class="brand-mark">PP</div>
+          <div>
+            <p class="eyebrow">Project Praetorian</p>
+            <h1>The Interregnum Protocol</h1>
+          </div>
+        </a>
+      </div>
+      <div class="top-status">
+        <span class="inline-icon"></span>
+        <span>Benchmark Dashboard</span>
+      </div>
+    </header>
+
+    <main class="shell benchmark-layout">
+      <div class="benchmark-header">
+        <p class="eyebrow">Performance Metrics</p>
+        <h2>Remediation Benchmark</h2>
+        <p>Historical run data across all packages analyzed by the Interregnum Protocol agents.</p>
+      </div>
+
+      <div class="big-metrics" id="summary-metrics"></div>
+
+      <div class="benchmark-table-wrap glass-card" id="table-container">
+        <table class="benchmark-table">
+          <thead>
+            <tr>
+              <th>Package</th>
+              <th>CVE</th>
+              <th>Confidence</th>
+              <th>Resilience</th>
+              <th>Patch Quality</th>
+              <th>Speed</th>
+              <th>Status</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="benchmark-body">
+            <tr><td colspan="8" class="benchmark-empty">Loading benchmark data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+
+    <script>
+      (async function() {
+        try {
+          const res = await fetch('/api/benchmark');
+          const data = await res.json();
+          const runs = data.runs || [];
+          const tbody = document.getElementById('benchmark-body');
+          const summaryEl = document.getElementById('summary-metrics');
+
+          if (runs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="benchmark-empty">No runs recorded yet. Run a remediation to populate this dashboard.</td></tr>';
+            return;
+          }
+
+          // Summary cards
+          const totalRuns = runs.length;
+          const avgConfidence = Math.round(runs.reduce((s, r) => s + (r.confidence_score || 0), 0) / totalRuns);
+          const completeRuns = runs.filter(r => r.status === 'complete').length;
+          summaryEl.innerHTML = `
+            <div class="metric-card"><span class="stat-label">Total Runs</span><div class="metric-value">${totalRuns}</div><div class="metric-sub">Across all packages</div></div>
+            <div class="metric-card"><span class="stat-label">Avg Confidence</span><div class="metric-value">${avgConfidence}</div><div class="metric-sub">Out of 100</div></div>
+            <div class="metric-card"><span class="stat-label">Success Rate</span><div class="metric-value">${Math.round(completeRuns/totalRuns*100)}%</div><div class="metric-sub">${completeRuns}/${totalRuns} completed</div></div>
+            <div class="metric-card"><span class="stat-label">Packages Covered</span><div class="metric-value">${new Set(runs.map(r=>r.package_name)).size}</div><div class="metric-sub">Unique packages</div></div>
+          `;
+
+          // Table
+          tbody.innerHTML = runs.map(run => {
+            const statusClass = run.status === 'complete' ? 'status-complete' : run.status === 'error' ? 'status-error' : 'status-partial';
+            const date = run.created_at ? new Date(run.created_at).toLocaleDateString() : '—';
+            return `<tr>
+              <td><strong style="color:var(--text-primary)">${run.package_name || '—'}</strong></td>
+              <td style="font-family:var(--font-mono);font-size:12px">${run.cve || '—'}</td>
+              <td class="score-cell">${run.confidence_score || 0}</td>
+              <td class="score-cell">${run.resilience_score || '0%'}</td>
+              <td class="score-cell">${run.patch_quality_score || 0}</td>
+              <td class="score-cell">${run.speed_score || 0}</td>
+              <td><span class="status-badge ${statusClass}">${run.status || 'unknown'}</span></td>
+              <td style="font-size:12px;color:var(--text-tertiary)">${date}</td>
+            </tr>`;
+          }).join('');
+        } catch (err) {
+          document.getElementById('benchmark-body').innerHTML = `<tr><td colspan="8" class="benchmark-empty">Error loading data: ${err.message}</td></tr>`;
+        }
+      })();
+    </script>
+  </body>
+</html>

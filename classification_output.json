@@ -1,18 +1,14 @@
 {
-  "target": "request",
-  "package_name": "request",
-  "cve": "CVE-2023-28155",
-  "findings": [
-    {
-      "vulnerability_class": "Insufficient Input Validation",
-      "file": "vulnerable-package-3/index.js",
-      "line": 28,
-      "severity": "high",
-      "confidence": 94,
-      "explanation": "Redirect targets are followed without validating that the redirected protocol still matches the allowed protocol policy."
-    }
+  "signature": "da18f123340fefd6e21adb371bb24e3b5e876407",
+  "target": "custom",
+  "package_name": "moment",
+  "cve": "0day",
+  "classifier_mode": "model",
+  "files_analyzed": [
+    "dynamic-target/moment-moment-develop/src/moment-develop/moment.js"
   ],
-  "independent_detection": true,
-  "matched_known_cve": true,
+  "findings": [],
+  "independent_detection": false,
+  "matched_known_cve": false,
   "additional_findings": []
 }

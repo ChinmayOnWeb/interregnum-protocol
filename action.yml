@@ -1,0 +1,43 @@
+name: 'Interregnum Protocol'
+description: 'Autonomous security remediation for vulnerable open-source packages'
+author: 'Project Praetorian'
+
+inputs:
+  package:
+    description: 'npm package name or GitHub repo URL to remediate'
+    required: true
+  cve:
+    description: 'CVE identifier (recommended but optional)'
+    required: false
+  provider:
+    description: 'LLM provider: openai, anthropic, or xai'
+    required: false
+    default: 'openai'
+  openai-api-key:
+    description: 'OpenAI API key'
+    required: false
+  anthropic-api-key:
+    description: 'Anthropic API key'
+    required: false
+  xai-api-key:
+    description: 'xAI API key'
+    required: false
+  github-token:
+    description: 'GitHub token for PR creation'
+    required: false
+
+outputs:
+  confidence-score:
+    description: 'Remediation confidence score (0-100)'
+  resilience-score:
+    description: 'Adversarial patch resilience percentage'
+  pr-url:
+    description: 'URL of the created pull request (if applicable)'
+
+runs:
+  using: 'node20'
+  main: 'cli.js'
+
+branding:
+  icon: 'shield'
+  color: 'blue'

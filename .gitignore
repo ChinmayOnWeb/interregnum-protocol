@@ -16,3 +16,6 @@ REMEDIATION_REPORT.md
 .env.local
 dashboard/.env
 dashboard/.env.local
+node_modules/
+praetorian.db
+package-lock.json
