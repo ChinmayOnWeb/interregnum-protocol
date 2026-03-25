@@ -77,14 +77,23 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/prepare-target') {
       const body = await readRequestBody(req);
       const parsed = JSON.parse(body || '{}');
-      const customTarget = await buildCustomTarget({ input: parsed.input, cve: parsed.cve });
+      // Fire preparation in the background — do NOT await
+      buildCustomTarget({ input: parsed.input, cve: parsed.cve })
+        .then(async (customTarget) => {
+          wsProgress('harness', 'running', `Generating exploit and regression harness for ${customTarget.packageName}`);
+          await generateDynamicHarness(customTarget.key);
+          wsProgress('harness', 'complete', `Harness ready for ${customTarget.packageName}`);
+          broadcast({ type: 'prepare_complete', target: customTarget.key, packageName: customTarget.packageName });
+        })
+        .catch((err) => {
+          wsProgress('system', 'error', `Preparation failed: ${err.message}`);
+        });
+      // Respond immediately so the client can start polling
       return sendJson(res, {
         ok: true,
-        target: customTarget.key,
-        packageName: customTarget.packageName,
-        cve: customTarget.cve,
-        inputKind: customTarget.inputKind || 'npm'
-      });
+        accepted: true,
+        message: 'Custom target preparation started. Poll /api/prepare-status for progress.'
+      }, 202);
     }
 
     if (url.pathname === '/api/prepare-status') {

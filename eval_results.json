@@ -1,17 +1,17 @@
 {
   "target": "custom",
-  "package_name": "mixin-deep",
-  "cve": "0day",
-  "generated_at": "2026-03-22T20:48:30.755Z",
-  "patch_quality_score": 42,
+  "package_name": "moment",
+  "cve": "UNSPECIFIED-ADVISORY",
+  "generated_at": "2026-03-25T21:09:28.842Z",
+  "patch_quality_score": 50,
   "patch_quality_breakdown": {
     "lines_changed": {
-      "points": 0,
+      "points": 20,
       "max_points": 20,
-      "changed_lines": 77
+      "changed_lines": 0
     },
     "convention_match": {
-      "points": 12,
+      "points": 0,
       "max_points": 20
     },
     "no_new_dependencies": {
@@ -27,47 +27,39 @@
       "max_points": 20
     }
   },
-  "speed_score": 78,
+  "speed_score": 73,
   "speed": {
-    "total_pipeline_time_ms": 24017,
-    "total_pipeline_time_seconds": 24.02,
+    "total_pipeline_time_ms": 27492,
+    "total_pipeline_time_seconds": 27.49,
     "per_agent_step_ms": [
       {
         "agent": "intel",
-        "duration_ms": 240,
-        "duration_seconds": 0.24
+        "duration_ms": 317,
+        "duration_seconds": 0.32
       },
       {
         "agent": "scout",
-        "duration_ms": 2730,
-        "duration_seconds": 2.73
+        "duration_ms": 3716,
+        "duration_seconds": 3.72
       },
       {
         "agent": "Analyzer",
-        "duration_ms": 5699,
-        "duration_seconds": 5.7
+        "duration_ms": 6924,
+        "duration_seconds": 6.92
       },
       {
         "agent": "Patcher",
-        "duration_ms": 15273,
-        "duration_seconds": 15.27
-      },
-      {
-        "agent": "Verifier",
-        "duration_ms": 28,
-        "duration_seconds": 0.03
-      },
-      {
-        "agent": "Adversarial Tester",
-        "duration_ms": 6,
-        "duration_seconds": 0.01
+        "duration_ms": 16508,
+        "duration_seconds": 16.51
       }
     ]
   },
   "reliability_log": {
-    "all_succeeded_on_first_try": true,
+    "all_succeeded_on_first_try": false,
     "retries_needed": 0,
-    "error_log": [],
+    "error_log": [
+      "Patcher: Unexpected token '}'"
+    ],
     "agents": [
       {
         "agent": "intel",
@@ -75,7 +67,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 240,
+        "duration_ms": 317,
         "error": null
       },
       {
@@ -84,7 +76,7 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 2730,
+        "duration_ms": 3716,
         "error": null
       },
       {
@@ -93,40 +85,22 @@
         "attempts": 1,
         "succeeded_on_first_try": true,
         "retries_needed": 0,
-        "duration_ms": 5699,
+        "duration_ms": 6924,
         "error": null
       },
       {
         "agent": "Patcher",
-        "success": true,
+        "success": false,
         "attempts": 1,
-        "succeeded_on_first_try": true,
+        "succeeded_on_first_try": false,
         "retries_needed": 0,
-        "duration_ms": 15273,
-        "error": null
-      },
-      {
-        "agent": "Verifier",
-        "success": true,
-        "attempts": 1,
-        "succeeded_on_first_try": true,
-        "retries_needed": 0,
-        "duration_ms": 28,
-        "error": null
-      },
-      {
-        "agent": "Adversarial Tester",
-        "success": true,
-        "attempts": 1,
-        "succeeded_on_first_try": true,
-        "retries_needed": 0,
-        "duration_ms": 6,
-        "error": null
+        "duration_ms": 16508,
+        "error": "Unexpected token '}'"
       }
     ]
   },
   "adversarial": {
-    "adversarial_tests_run": 1,
+    "adversarial_tests_run": 2,
     "bypasses_found": 0,
     "patch_resilience_score": "100%",
     "verdict": "HARDENED"
@@ -135,20 +109,20 @@
     "exploit_before": {
       "ok": false,
       "polluted": false,
-      "output": "SAFE: target-specific exploit harness unavailable (Failed to parse JSON output from openai: Unexpected token '\\', ...\"payload\": \\\"{ safe: \"... is not valid JSON\nRaw output:\n{\n  \"exploit_script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nhelpers.withBlockedNetwork(() => {\\n  try {\\n    const obj = {};\\n    const payload = { __proto__: { admin: true } };\\n    const result = mixinDeep({}, payload);\\n    // If prototype was polluted, admin would be true on new objects\\n    const polluted = {}.admin === true || Boolean(obj.admin) === true || Object.prototype.admin === true;\\n    return { vulnerable: polluted };\\n  } catch (err) {\\n    return { vulnerable: false };\\n  }\\n});\",\n  \"exploit_success_message\": \"Prototype pollution vulnerability detected: __proto__ property modified on the global prototype chain.\",\n  \"exploit_failure_message\": \"No prototype pollution vulnerability detected with __proto__ property. Input validation on keys is effective.\",\n  \"normal_tests\": [\n    {\n      \"name\": \"Basic Object Merge\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst target = { a: { b: 1 }};\\nconst source = { a: { c: 2 }, d: 3 };\\nconst expected = { a: { b: 1, c: 2 }, d: 3 };\\nconst result = mixinDeep(target, source);\\nassert.deepStrictEqual(result, expected);\\n\"\n    },\n    {\n      \"name\": \"Array Property Overwrite\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst target = { arr: [1, 2, 3] };\\nconst source = { arr: [4, 5] };\\nconst result = mixinDeep(target, source);\\nassert.deepStrictEqual(result.arr, [4, 5]);\\n\"\n    },\n    {\n      \"name\": \"Function Property Copy\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nfunction fn() { return 42; }\\nconst target = {};\\nconst source = { method: fn };\\nconst result = mixinDeep(target, source);\\nassert.strictEqual(typeof result.method, 'function');\\nassert.strictEqual(result.method(), 42);\\n\"\n    }\n  ],\n  \"adversarial_attempts\": [\n    {\n      \"bypass_name\": \"Using constructor key\",\n      \"payload\": \"{ constructor: { prototype: { hacked: true } } }\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst payload = { constructor: { prototype: { hacked: true } } };\\nconst target = {};\\nconst result = mixinDeep(target, payload);\\nconst bypassed = ({}).hacked === true || Object.prototype.hacked === true || target.constructor && target.constructor.prototype && target.constructor.prototype.hacked === true;\\nreturn { bypassed };\\n\"\n    },\n    {\n      \"bypass_name\": \"Using prototype key\",\n      \"payload\": \"{ prototype: { evil: true } }\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst payload = { prototype: { evil: true } };\\nconst target = {};\\nconst result = mixinDeep(target, payload);\\nconst bypassed = ({}).evil === true || Object.prototype.evil === true || target.prototype && target.prototype.evil === true;\\nreturn { bypassed };\\n\"\n    },\n    {\n      \"bypass_name\": \"Using nested __proto__ key\",\n      \"payload\": \\\"{ safe: { __proto__: { attacked: true } } }\\\",\\n      \\\"script\\\": \\\"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\\\nconst payload = { safe: { __proto__: { attacked: true } } };\\\\nconst target = {};\\\\nconst result = mixinDeep(target, payload);\\\\nconst attacked = ({}).attacked === true || Object.prototype.attacked === true;\\\\nreturn { bypassed: attacked };\\\\n\\\"\"\n    }\n  ]\n}); manual review required"
+      "output": "moment is not vulnerable to prototype pollution via input objects; input validation appears sufficient for this test."
     },
     "exploit_after": {
       "ok": true,
       "polluted": false,
-      "output": "SAFE: target-specific exploit harness unavailable (Failed to parse JSON output from openai: Unexpected token '\\', ...\"payload\": \\\"{ safe: \"... is not valid JSON\nRaw output:\n{\n  \"exploit_script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nhelpers.withBlockedNetwork(() => {\\n  try {\\n    const obj = {};\\n    const payload = { __proto__: { admin: true } };\\n    const result = mixinDeep({}, payload);\\n    // If prototype was polluted, admin would be true on new objects\\n    const polluted = {}.admin === true || Boolean(obj.admin) === true || Object.prototype.admin === true;\\n    return { vulnerable: polluted };\\n  } catch (err) {\\n    return { vulnerable: false };\\n  }\\n});\",\n  \"exploit_success_message\": \"Prototype pollution vulnerability detected: __proto__ property modified on the global prototype chain.\",\n  \"exploit_failure_message\": \"No prototype pollution vulnerability detected with __proto__ property. Input validation on keys is effective.\",\n  \"normal_tests\": [\n    {\n      \"name\": \"Basic Object Merge\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst target = { a: { b: 1 }};\\nconst source = { a: { c: 2 }, d: 3 };\\nconst expected = { a: { b: 1, c: 2 }, d: 3 };\\nconst result = mixinDeep(target, source);\\nassert.deepStrictEqual(result, expected);\\n\"\n    },\n    {\n      \"name\": \"Array Property Overwrite\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst target = { arr: [1, 2, 3] };\\nconst source = { arr: [4, 5] };\\nconst result = mixinDeep(target, source);\\nassert.deepStrictEqual(result.arr, [4, 5]);\\n\"\n    },\n    {\n      \"name\": \"Function Property Copy\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nfunction fn() { return 42; }\\nconst target = {};\\nconst source = { method: fn };\\nconst result = mixinDeep(target, source);\\nassert.strictEqual(typeof result.method, 'function');\\nassert.strictEqual(result.method(), 42);\\n\"\n    }\n  ],\n  \"adversarial_attempts\": [\n    {\n      \"bypass_name\": \"Using constructor key\",\n      \"payload\": \"{ constructor: { prototype: { hacked: true } } }\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst payload = { constructor: { prototype: { hacked: true } } };\\nconst target = {};\\nconst result = mixinDeep(target, payload);\\nconst bypassed = ({}).hacked === true || Object.prototype.hacked === true || target.constructor && target.constructor.prototype && target.constructor.prototype.hacked === true;\\nreturn { bypassed };\\n\"\n    },\n    {\n      \"bypass_name\": \"Using prototype key\",\n      \"payload\": \"{ prototype: { evil: true } }\",\n      \"script\": \"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\nconst payload = { prototype: { evil: true } };\\nconst target = {};\\nconst result = mixinDeep(target, payload);\\nconst bypassed = ({}).evil === true || Object.prototype.evil === true || target.prototype && target.prototype.evil === true;\\nreturn { bypassed };\\n\"\n    },\n    {\n      \"bypass_name\": \"Using nested __proto__ key\",\n      \"payload\": \\\"{ safe: { __proto__: { attacked: true } } }\\\",\\n      \\\"script\\\": \\\"const mixinDeep = helpers.requireFresh(modulePath, helpers.targetSourcePath);\\\\nconst payload = { safe: { __proto__: { attacked: true } } };\\\\nconst target = {};\\\\nconst result = mixinDeep(target, payload);\\\\nconst attacked = ({}).attacked === true || Object.prototype.attacked === true;\\\\nreturn { bypassed: attacked };\\\\n\\\"\"\n    }\n  ]\n}); manual review required"
+      "output": "moment is not vulnerable to prototype pollution via input objects; input validation appears sufficient for this test."
     },
     "normal_tests_before": {
       "ok": true,
-      "output": "PASS: module loads successfully\nPASS: module export surface is accessible\nALL NORMAL TESTS PASSED"
+      "output": "PASS: Valid ISO 8601 Date String Parsing\nPASS: Invalid Date String Produces Invalid Moment\nPASS: Parsing Null Input Yields Invalid Moment\nPASS: Parsing Date Object Produces Valid Moment\nALL NORMAL TESTS PASSED"
     },
     "normal_tests_after": {
       "ok": true,
-      "output": "PASS: module loads successfully\nPASS: module export surface is accessible\nALL NORMAL TESTS PASSED"
+      "output": "PASS: Valid ISO 8601 Date String Parsing\nPASS: Invalid Date String Produces Invalid Moment\nPASS: Parsing Null Input Yields Invalid Moment\nPASS: Parsing Date Object Produces Valid Moment\nALL NORMAL TESTS PASSED"
     }
   },
   "metadata": {

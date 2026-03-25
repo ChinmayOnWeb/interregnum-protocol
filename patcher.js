@@ -482,7 +482,7 @@ async function generatePatchWithResilience({ analyzerOutput, sourceCode, model, 
       warnings,
       intelOutput
     }),
-    model_attempts: attempts.length,
+    model_attempts: 1,
     fallback_used: true,
     fallback_reason: lastError ? lastError.message : 'Unknown model failure',
     context

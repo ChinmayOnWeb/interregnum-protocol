@@ -1,17 +1,23 @@
 {
   "target": "custom",
-  "package_name": "mixin-deep",
-  "cve": "0day",
-  "patch_diff_reviewed": true,
+  "package_name": "moment",
+  "cve": "UNSPECIFIED-ADVISORY",
+  "patch_diff_reviewed": false,
   "attempts": [
     {
-      "bypass_name": "input validation fallback probe",
-      "payload": "{ redirect: true }",
+      "bypass_name": "Bypass with Object Having toString Returning Malicious String",
+      "payload": "const maliciousInput = { toString: () => '2020-02-30' }; // invalid date but string is supplied by toString()",
+      "result": "BLOCKED",
+      "severity": "none"
+    },
+    {
+      "bypass_name": "Bypass with Numeric String Input Containing Leading Characters",
+      "payload": "'  20200101  '",
       "result": "BLOCKED",
       "severity": "none"
     }
   ],
-  "adversarial_tests_run": 1,
+  "adversarial_tests_run": 2,
   "bypasses_found": 0,
   "patch_resilience_score": "100%",
   "verdict": "HARDENED",

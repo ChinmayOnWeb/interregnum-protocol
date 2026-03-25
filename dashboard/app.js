@@ -14,7 +14,9 @@ const state = {
   liveStages: [],
   targetData: null,
   debateTimer: null,
-  seenDebates: new Set()
+  seenDebates: new Set(),
+  elapsedTimerInterval: null,
+  elapsedStartTime: null
 };
 
 // --- Initialization ---
@@ -33,7 +35,7 @@ function cacheDOM() {
     'mode-demo', 'mode-custom', 'intake-mode-demo', 'intake-mode-custom',
     'load-demo', 'demo-chip-row', 'intake-form', 'repo-input', 'cve-input',
     'protocol-target', 'artifact-title', 'artifact-preview', 'live-title',
-    'progress-status', 'progress-fill', 'live-rotator', 'mini-stats',
+    'progress-status', 'progress-fill', 'live-rotator', 'live-timer', 'mini-stats',
     'show-dashboard', 'show-summary', 'dashboard-view', 'summary-view',
     'results-chip', 'big-metrics', 'confidence-chart', 'confidence-big',
     'exploit-metric', 'exploit-bar', 'tests-metric', 'tests-bar', 'patch-metric', 'patch-bar',
@@ -195,8 +197,10 @@ async function startRemediation() {
     }
     
     updateLiveContext(input, 'Ingesting custom target');
+    handleProgressUpdate({ agent: 'scout', status: 'running', message: 'Submitting package for intake...' });
     
     try {
+      // Fire-and-forget: server returns 202 immediately
       const res = await fetch('/api/prepare-target', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -204,15 +208,78 @@ async function startRemediation() {
       });
       const data = await res.json();
       
-      if (!res.ok) throw new Error(data.error || 'Failed to prepare target');
+      if (!res.ok && res.status !== 202) throw new Error(data.error || 'Failed to submit target');
       
-      targetKey = data.target;
-      startDashboardDataFetch(targetKey);
+      // Start polling preparation status
+      startPreparationPolling(input);
     } catch (e) {
       handleProgressUpdate({ agent: 'system', status: 'error', message: `Preparation failed: ${e.message}` });
       setTimeout(() => alert(`Error: ${e.message}`), 500);
       switchScreen('screen-intake');
     }
+  }
+}
+
+let preparePollTimer = null;
+function startPreparationPolling(inputLabel) {
+  stopPreparationPolling();
+  
+  const PHASE_TO_AGENT = {
+    queued: 'scout', parsed: 'scout', metadata: 'scout',
+    advisory: 'scout', snapshot: 'scout',
+    download: 'scout', extract: 'scout', install: 'scout',
+    source: 'spotter', hunter: 'spotter',
+    classify: 'scout', harness: 'scout',
+    target: 'spotter', ready: 'spotter',
+    remediate: 'striker', adversarial: 'adversary',
+    eval: 'debrief', failed: 'system'
+  };
+  
+  preparePollTimer = setInterval(async () => {
+    try {
+      const res = await fetch('/api/prepare-status');
+      if (!res.ok) return;
+      const status = await res.json();
+      
+      if (!status || status.status === 'idle') return;
+      
+      // Map server phase to agent step
+      const agentKey = PHASE_TO_AGENT[status.phase] || 'scout';
+      
+      // Update progress bar with server-reported progress
+      if (elements['progress-fill'] && status.progress) {
+        // Scale preparation progress (0-100) to the first ~50% of pipeline
+        const scaledProgress = Math.min(status.progress * 0.5, 50);
+        elements['progress-fill'].style.width = `${scaledProgress}%`;
+      }
+      
+      // Drive pipeline UI
+      handleProgressUpdate({
+        agent: agentKey,
+        status: status.status === 'error' ? 'error' : 'running',
+        message: status.message || 'Processing...'
+      });
+      
+      if (status.packageName && inputLabel) {
+        updateLiveContext(status.packageName, status.message || 'Processing...');
+      }
+      
+      // When preparation is complete, stop polling and move to remediation
+      if (status.status === 'complete') {
+        stopPreparationPolling();
+        handleProgressUpdate({ agent: 'spotter', status: 'running', message: `Target ready. Starting full remediation pipeline for ${status.packageName || 'package'}...` });
+        startDashboardDataFetch('custom');
+      } else if (status.status === 'error') {
+        stopPreparationPolling();
+      }
+    } catch (e) { /* ignore network errors during polling */ }
+  }, 1500);
+}
+
+function stopPreparationPolling() {
+  if (preparePollTimer) {
+    clearInterval(preparePollTimer);
+    preparePollTimer = null;
   }
 }
 
@@ -229,11 +296,17 @@ async function startDashboardDataFetch(targetKey) {
     handleProgressUpdate({ agent: 'system', status: 'error', message: err.message });
   }
 }
+}
 
 function resetLiveUI() {
-  if (elements['progress-fill']) elements['progress-fill'].style.width = '0%';
+  if (elements['progress-fill']) {
+    elements['progress-fill'].style.width = '0%';
+    elements['progress-fill'].style.background = '';
+  }
+  if (elements['progress-status']) elements['progress-status'].style.color = '';
   if (elements['artifact-title']) elements['artifact-title'].textContent = 'Pending agent output...';
   if (elements['artifact-preview']) elements['artifact-preview'].textContent = '';
+  if (elements['live-rotator']) elements['live-rotator'].textContent = 'Standing by for target intake...';
   
   const debateCont = document.getElementById('debate-container');
   if (debateCont) debateCont.style.display = 'none';
@@ -246,6 +319,8 @@ function resetLiveUI() {
   state.liveStages.forEach(s => { s.classList.remove('is-active', 'is-done'); });
   if (state.pipelineNodes[0]) state.pipelineNodes[0].classList.add('is-active');
   if (state.liveStages[0]) state.liveStages[0].classList.add('is-active');
+  
+  startElapsedTimer();
 }
 
 function updateLiveContext(targetName, statusStr) {
@@ -306,6 +381,38 @@ function stopDebatePolling() {
   }
 }
 
+function startElapsedTimer() {
+  stopElapsedTimer();
+  state.elapsedStartTime = Date.now();
+  if (elements['live-timer']) elements['live-timer'].textContent = 'Elapsed: 00:00.0s';
+  state.elapsedTimerInterval = setInterval(() => {
+    if (!state.elapsedStartTime) return;
+    const elapsed = Date.now() - state.elapsedStartTime;
+    const totalSeconds = Math.floor(elapsed / 1000);
+    const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+    const seconds = String(totalSeconds % 60).padStart(2, '0');
+    const tenths = Math.floor((elapsed % 1000) / 100);
+    if (elements['live-timer']) elements['live-timer'].textContent = `Elapsed: ${minutes}:${seconds}.${tenths}s`;
+  }, 100);
+}
+
+function stopElapsedTimer() {
+  if (state.elapsedTimerInterval) {
+    clearInterval(state.elapsedTimerInterval);
+    state.elapsedTimerInterval = null;
+  }
+}
+
+const ROTATOR_MESSAGES = {
+  scout: ['Scanning codebase for vulnerability patterns...', 'Classifying vulnerability surface area...', 'Building exploit harness from advisory context...'],
+  spotter: ['Tracing vulnerable code paths...', 'Isolating root cause in target function...', 'Mapping blast radius from entry point...'],
+  striker: ['Generating competing fix strategies...', 'Architect and Cryptographer agents deliberating...', 'Judge synthesizing optimal patch...'],
+  validator: ['Reproducing exploit against patched build...', 'Running regression test suite...', 'Confirming zero breakage on patched code...'],
+  adversary: ['Launching adversarial bypass attempts...', 'Stress-testing patch with hostile payloads...', 'Scoring patch resilience under attack...'],
+  debrief: ['Compiling remediation artifacts...', 'Scoring patch quality metrics...', 'Generating final decision report...']
+};
+const ROTATOR_STEP_KEYS = ['scout', 'spotter', 'striker', 'validator', 'adversary', 'debrief'];
+
 function handleProgressUpdate(update) {
   const { agent, status, message } = update;
   const stepIndex = AGENT_MAP[agent.toLowerCase()] ?? -1;
@@ -319,6 +426,7 @@ function handleProgressUpdate(update) {
     if (elements['artifact-title']) elements['artifact-title'].textContent = 'Terminal Error';
     if (elements['artifact-preview']) elements['artifact-preview'].textContent = message;
     stopDebatePolling();
+    stopElapsedTimer();
     return;
   }
   
@@ -332,23 +440,32 @@ function handleProgressUpdate(update) {
   }
   
   if (stepIndex >= 0) {
-    // Update visualization
+    // Update progress bar
     const progressPct = Math.min(((stepIndex + 1) / 6) * 100, 100);
     if (elements['progress-fill']) elements['progress-fill'].style.width = `${progressPct}%`;
     
+    // Update pipeline node indicators
     state.pipelineNodes.forEach((node, idx) => {
       node.classList.remove('is-active', 'is-error');
       if (idx < stepIndex) node.classList.add('is-done');
       if (idx === stepIndex) node.classList.add('is-active');
     });
     
+    // Update left-side stage cards
     state.liveStages.forEach((stage, idx) => {
       stage.classList.remove('is-active');
       if (idx < stepIndex) stage.classList.add('is-done');
       if (idx === stepIndex) stage.classList.add('is-active');
     });
     
-    // Simulate artifact preview updates
+    // Update live-rotator with contextual rotating messages
+    const stageKey = ROTATOR_STEP_KEYS[stepIndex];
+    if (elements['live-rotator'] && stageKey && ROTATOR_MESSAGES[stageKey]) {
+      const msgs = ROTATOR_MESSAGES[stageKey];
+      elements['live-rotator'].textContent = msgs[Math.floor(Math.random() * msgs.length)];
+    }
+    
+    // Update artifact preview panel
     if (elements['artifact-title'] && elements['artifact-preview']) {
       elements['artifact-title'].textContent = `Agent: ${agent.toUpperCase()}`;
       elements['artifact-preview'].textContent = `> ${message}\n> Processing artifact stream...\n> Segment hash: ${Math.random().toString(16).slice(2, 10)}\n> OK`;
@@ -360,6 +477,7 @@ function handleProgressUpdate(update) {
 
 function renderResults(data) {
   state.targetData = data;
+  stopElapsedTimer();
   switchScreen('screen-results');
   
   if (elements['results-chip']) {

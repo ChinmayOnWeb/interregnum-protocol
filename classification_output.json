@@ -1,14 +1,23 @@
 {
-  "signature": "da18f123340fefd6e21adb371bb24e3b5e876407",
+  "signature": "d768a5792517f7c2888c287b09ea798483244ce5",
   "target": "custom",
-  "package_name": "moment",
-  "cve": "0day",
+  "package_name": "js-yaml",
+  "cve": "CVE-2025-64718",
   "classifier_mode": "model",
   "files_analyzed": [
-    "dynamic-target/moment-moment-develop/src/moment-develop/moment.js"
+    "dynamic-target/nodeca-js-yaml-0d3ca7a27b03/src/js-yaml-0d3ca7a27b03a6c974790a30a89e456007d62976/dist/js-yaml.mjs"
   ],
-  "findings": [],
-  "independent_detection": false,
-  "matched_known_cve": false,
+  "findings": [
+    {
+      "vulnerability_class": "Prototype Pollution",
+      "file": "dynamic-target/nodeca-js-yaml-0d3ca7a27b03/src/js-yaml-0d3ca7a27b03a6c974790a30a89e456007d62976/dist/js-yaml.mjs",
+      "line": 1452,
+      "severity": "high",
+      "confidence": 90,
+      "explanation": "The code explicitly checks for the '__proto__' key during mapping pair storage and uses Object.defineProperty to assign to it directly, which can potentially allow prototype pollution by modifying Object.prototype if user-controlled YAML input contains '__proto__' keys."
+    }
+  ],
+  "independent_detection": true,
+  "matched_known_cve": true,
   "additional_findings": []
 }
